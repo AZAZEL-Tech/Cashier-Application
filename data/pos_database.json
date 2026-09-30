@@ -1,0 +1,504 @@
+{
+  "settings": {
+    "storeName": "Warung Berkah Jaya",
+    "storeAddress": "Jl. Merdeka No. 45, Jakarta Selatan",
+    "storePhone": "0812-3456-7890",
+    "receiptFooter": "Terima kasih atas kunjungan Anda!\nBarang yang sudah dibeli tidak dapat ditukar.",
+    "currency": "Rp",
+    "taxRate": 0,
+    "adminPassword": "admin",
+    "cashierPin": "1234",
+    "qrisNmid": "ID1020304050607",
+    "qrisMerchantName": "WARUNG BERKAH JAYA",
+    "paperSize": "58mm",
+    "soundEnabled": true
+  },
+  "categories": [
+    {
+      "id": "all",
+      "name": "Semua Produk",
+      "icon": "layout-grid"
+    },
+    {
+      "id": "sembako",
+      "name": "Sembako",
+      "icon": "wheat"
+    },
+    {
+      "id": "minuman",
+      "name": "Minuman",
+      "icon": "cup-soda"
+    },
+    {
+      "id": "makanan",
+      "name": "Makanan & Mie",
+      "icon": "utensils"
+    },
+    {
+      "id": "snack",
+      "name": "Snack & Jajanan",
+      "icon": "cookie"
+    },
+    {
+      "id": "rokok",
+      "name": "Rokok",
+      "icon": "flame"
+    },
+    {
+      "id": "kebersihan",
+      "name": "Sabun & Cuci",
+      "icon": "sparkles"
+    },
+    {
+      "id": "lainnya",
+      "name": "Lain-lain",
+      "icon": "package"
+    }
+  ],
+  "products": [
+    {
+      "id": "P001",
+      "name": "Beras Rojolele 5kg",
+      "barcode": "8991001",
+      "category": "sembako",
+      "costPrice": 65000,
+      "sellPrice": 75000,
+      "stock": 8,
+      "minStock": 5,
+      "unit": "sak",
+      "image": "https://images.unsplash.com/photo-1586201375761-83865001e31c?w=400&auto=format&fit=crop&q=60"
+    },
+    {
+      "id": "P002",
+      "name": "Minyak Goreng Bimoli 2L",
+      "barcode": "8991002",
+      "category": "sembako",
+      "costPrice": 32000,
+      "sellPrice": 37000,
+      "stock": 5,
+      "minStock": 5,
+      "unit": "pouch",
+      "image": "https://images.unsplash.com/photo-1474979266404-7eaacbcd87c5?w=400&auto=format&fit=crop&q=60"
+    },
+    {
+      "id": "P003",
+      "name": "Gula Pasir Gulaku 1kg",
+      "barcode": "8991003",
+      "category": "sembako",
+      "costPrice": 15500,
+      "sellPrice": 18000,
+      "stock": 25,
+      "minStock": 10,
+      "unit": "kg",
+      "image": "https://images.unsplash.com/photo-1622484216805-4c07914fa679?w=400&auto=format&fit=crop&q=60"
+    },
+    {
+      "id": "P004",
+      "name": "Telur Ayam 1kg",
+      "barcode": "8991004",
+      "category": "sembako",
+      "costPrice": 26000,
+      "sellPrice": 29000,
+      "stock": 10,
+      "minStock": 8,
+      "unit": "kg",
+      "image": "https://images.unsplash.com/photo-1582722872445-44dc5f7e3c8f?w=400&auto=format&fit=crop&q=60"
+    },
+    {
+      "id": "P005",
+      "name": "Indomie Goreng Original",
+      "barcode": "8991005",
+      "category": "makanan",
+      "costPrice": 2700,
+      "sellPrice": 3500,
+      "stock": 94,
+      "minStock": 20,
+      "unit": "bks",
+      "image": "https://images.unsplash.com/photo-1612927601601-6638404737ce?w=400&auto=format&fit=crop&q=60"
+    },
+    {
+      "id": "P006",
+      "name": "Indomie Kuah Ayam Bawang",
+      "barcode": "8991006",
+      "category": "makanan",
+      "costPrice": 2700,
+      "sellPrice": 3500,
+      "stock": 80,
+      "minStock": 15,
+      "unit": "bks",
+      "image": "https://images.unsplash.com/photo-1569718212165-3a8278d5f624?w=400&auto=format&fit=crop&q=60"
+    },
+    {
+      "id": "P007",
+      "name": "Teh Pucuk Harum 350ml",
+      "barcode": "8991007",
+      "category": "minuman",
+      "costPrice": 3000,
+      "sellPrice": 4000,
+      "stock": 48,
+      "minStock": 12,
+      "unit": "btl",
+      "image": "https://images.unsplash.com/photo-1556881286-fc6915169721?w=400&auto=format&fit=crop&q=60"
+    },
+    {
+      "id": "P008",
+      "name": "Aqua Botol 600ml",
+      "barcode": "8991008",
+      "category": "minuman",
+      "costPrice": 2500,
+      "sellPrice": 3500,
+      "stock": 60,
+      "minStock": 12,
+      "unit": "btl",
+      "image": "https://images.unsplash.com/photo-1548839140-29a749e1bc4e?w=400&auto=format&fit=crop&q=60"
+    },
+    {
+      "id": "P009",
+      "name": "Kopi Kapal Api Spesial Mix",
+      "barcode": "8991009",
+      "category": "minuman",
+      "costPrice": 1500,
+      "sellPrice": 2000,
+      "stock": 90,
+      "minStock": 15,
+      "unit": "sachet",
+      "image": "https://images.unsplash.com/photo-1514432324607-a09d9b4aefdd?w=400&auto=format&fit=crop&q=60"
+    },
+    {
+      "id": "P010",
+      "name": "Chitato Sapi Panggang 68g",
+      "barcode": "8991010",
+      "category": "snack",
+      "costPrice": 9500,
+      "sellPrice": 12000,
+      "stock": 25,
+      "minStock": 5,
+      "unit": "bks",
+      "image": "https://images.unsplash.com/photo-1566478989037-eec170784d0b?w=400&auto=format&fit=crop&q=60"
+    },
+    {
+      "id": "P011",
+      "name": "Oreo Vanilla 133g",
+      "barcode": "8991011",
+      "category": "snack",
+      "costPrice": 8000,
+      "sellPrice": 10000,
+      "stock": 30,
+      "minStock": 6,
+      "unit": "pack",
+      "image": "https://images.unsplash.com/photo-1558961363-fa8fdf82db35?w=400&auto=format&fit=crop&q=60"
+    },
+    {
+      "id": "P012",
+      "name": "Sampoerna Mild 16",
+      "barcode": "8991012",
+      "category": "rokok",
+      "costPrice": 31000,
+      "sellPrice": 34000,
+      "stock": 3,
+      "minStock": 10,
+      "unit": "bks",
+      "image": "https://images.unsplash.com/photo-1527661591475-527312dd65f5?w=400&auto=format&fit=crop&q=60"
+    },
+    {
+      "id": "P013",
+      "name": "Gudang Garam Surya 12",
+      "barcode": "8991013",
+      "category": "rokok",
+      "costPrice": 24000,
+      "sellPrice": 27000,
+      "stock": 2,
+      "minStock": 10,
+      "unit": "bks",
+      "image": "https://images.unsplash.com/photo-1527661591475-527312dd65f5?w=400&auto=format&fit=crop&q=60"
+    },
+    {
+      "id": "P014",
+      "name": "Sunlight Pencuci Piring 700ml",
+      "barcode": "8991014",
+      "category": "kebersihan",
+      "costPrice": 13000,
+      "sellPrice": 16000,
+      "stock": 15,
+      "minStock": 4,
+      "unit": "pouch",
+      "image": "https://images.unsplash.com/photo-1585670210693-e7fdd16b142e?w=400&auto=format&fit=crop&q=60"
+    },
+    {
+      "id": "P015",
+      "name": "Rinso Anti Noda 770g",
+      "barcode": "8991015",
+      "category": "kebersihan",
+      "costPrice": 20000,
+      "sellPrice": 24500,
+      "stock": 12,
+      "minStock": 4,
+      "unit": "bks",
+      "image": "https://images.unsplash.com/photo-1585670210693-e7fdd16b142e?w=400&auto=format&fit=crop&q=60"
+    }
+  ],
+  "transactions": [
+    {
+      "id": "TRX-20260930065030-458",
+      "date": "2026-09-30T06:50:30.094Z",
+      "cashier": "Kasir 1",
+      "customerName": "Umum",
+      "items": [
+        {
+          "id": "P001",
+          "name": "Beras Rojolele 5kg",
+          "barcode": "8991001",
+          "costPrice": 65000,
+          "sellPrice": 75000,
+          "unit": "sak",
+          "qty": 15,
+          "subtotal": 1125000,
+          "image": "https://images.unsplash.com/photo-1586201375761-83865001e31c?w=400&auto=format&fit=crop&q=60"
+        },
+        {
+          "id": "P002",
+          "name": "Minyak Goreng Bimoli 2L",
+          "barcode": "8991002",
+          "costPrice": 32000,
+          "sellPrice": 37000,
+          "unit": "pouch",
+          "qty": 13,
+          "subtotal": 481000,
+          "image": "https://images.unsplash.com/photo-1474979266404-7eaacbcd87c5?w=400&auto=format&fit=crop&q=60"
+        },
+        {
+          "id": "P003",
+          "name": "Gula Pasir Gulaku 1kg",
+          "barcode": "8991003",
+          "costPrice": 15500,
+          "sellPrice": 18000,
+          "unit": "kg",
+          "qty": 10,
+          "subtotal": 180000,
+          "image": "https://images.unsplash.com/photo-1622484216805-4c07914fa679?w=400&auto=format&fit=crop&q=60"
+        },
+        {
+          "id": "P004",
+          "name": "Telur Ayam 1kg",
+          "barcode": "8991004",
+          "costPrice": 26000,
+          "sellPrice": 29000,
+          "unit": "kg",
+          "qty": 30,
+          "subtotal": 870000,
+          "image": "https://images.unsplash.com/photo-1582722872445-44dc5f7e3c8f?w=400&auto=format&fit=crop&q=60"
+        },
+        {
+          "id": "P005",
+          "name": "Indomie Goreng Original",
+          "barcode": "8991005",
+          "costPrice": 2700,
+          "sellPrice": 3500,
+          "unit": "bks",
+          "qty": 24,
+          "subtotal": 84000,
+          "image": "https://images.unsplash.com/photo-1612927601601-6638404737ce?w=400&auto=format&fit=crop&q=60"
+        }
+      ],
+      "subtotal": 2740000,
+      "discount": 0,
+      "tax": 0,
+      "total": 2740000,
+      "totalCost": 2390800,
+      "profit": 349200,
+      "paymentMethod": "transfer",
+      "amountPaid": 2740000,
+      "change": 0,
+      "status": "completed"
+    },
+    {
+      "id": "TRX-20260930064837-939",
+      "date": "2026-09-30T06:48:37.582Z",
+      "cashier": "Kasir 1",
+      "customerName": "Umum",
+      "items": [
+        {
+          "id": "P001",
+          "name": "Beras Rojolele 5kg",
+          "barcode": "8991001",
+          "costPrice": 65000,
+          "sellPrice": 75000,
+          "unit": "sak",
+          "qty": 1,
+          "subtotal": 75000,
+          "image": "https://images.unsplash.com/photo-1586201375761-83865001e31c?w=400&auto=format&fit=crop&q=60"
+        }
+      ],
+      "subtotal": 75000,
+      "discount": 0,
+      "tax": 0,
+      "total": 75000,
+      "totalCost": 65000,
+      "profit": 10000,
+      "paymentMethod": "cash",
+      "amountPaid": 100000,
+      "change": 25000,
+      "status": "completed"
+    },
+    {
+      "id": "TRX-TEST-002",
+      "date": "2026-09-30T04:37:30Z",
+      "cashier": "Kasir HP",
+      "customerName": "Pelanggan Test",
+      "items": [
+        {
+          "id": "P005",
+          "name": "Indomie Goreng Original",
+          "qty": 2,
+          "costPrice": 2700,
+          "sellPrice": 3500,
+          "subtotal": 7000
+        }
+      ],
+      "subtotal": 7000,
+      "discount": 0,
+      "tax": 0,
+      "total": 7000,
+      "totalCost": 5400,
+      "profit": 1600,
+      "paymentMethod": "cash",
+      "amountPaid": 10000,
+      "change": 3000,
+      "status": "completed"
+    },
+    {
+      "id": "TRX-DEMO-001",
+      "date": "2026-09-30T01:30:00.000Z",
+      "cashier": "Kasir 1",
+      "customerName": "Umum",
+      "items": [
+        {
+          "id": "P001",
+          "name": "Beras Rojolele 5kg",
+          "qty": 1,
+          "costPrice": 65000,
+          "sellPrice": 75000,
+          "subtotal": 75000
+        },
+        {
+          "id": "P002",
+          "name": "Minyak Goreng Bimoli 2L",
+          "qty": 1,
+          "costPrice": 32000,
+          "sellPrice": 37000,
+          "subtotal": 37000
+        }
+      ],
+      "subtotal": 112000,
+      "discount": 0,
+      "tax": 0,
+      "total": 112000,
+      "totalCost": 97000,
+      "profit": 15000,
+      "paymentMethod": "cash",
+      "amountPaid": 120000,
+      "change": 8000,
+      "status": "completed"
+    }
+  ],
+  "expenses": [
+    {
+      "id": "EXP-001",
+      "date": "2026-09-29T08:00:00.000Z",
+      "category": "Stok Barang",
+      "description": "Restock Beras & Minyak Goreng Agen Utama",
+      "amount": 550000,
+      "recordedBy": "Admin"
+    },
+    {
+      "id": "EXP-002",
+      "date": "2026-09-30T02:00:00.000Z",
+      "category": "Operasional",
+      "description": "Plastik Kantong & Kertas Struk 58mm",
+      "amount": 45000,
+      "recordedBy": "Admin"
+    }
+  ],
+  "stockHistory": [
+    {
+      "id": "STK-1790751030109",
+      "date": "2026-09-30T06:50:30.094Z",
+      "productId": "P005",
+      "productName": "Indomie Goreng Original",
+      "type": "out",
+      "qty": 24,
+      "reason": "Penjualan #TRX-20260930065030-458",
+      "user": "Kasir 1"
+    },
+    {
+      "id": "STK-1790751030109",
+      "date": "2026-09-30T06:50:30.094Z",
+      "productId": "P004",
+      "productName": "Telur Ayam 1kg",
+      "type": "out",
+      "qty": 30,
+      "reason": "Penjualan #TRX-20260930065030-458",
+      "user": "Kasir 1"
+    },
+    {
+      "id": "STK-1790751030109",
+      "date": "2026-09-30T06:50:30.094Z",
+      "productId": "P003",
+      "productName": "Gula Pasir Gulaku 1kg",
+      "type": "out",
+      "qty": 10,
+      "reason": "Penjualan #TRX-20260930065030-458",
+      "user": "Kasir 1"
+    },
+    {
+      "id": "STK-1790751030109",
+      "date": "2026-09-30T06:50:30.094Z",
+      "productId": "P002",
+      "productName": "Minyak Goreng Bimoli 2L",
+      "type": "out",
+      "qty": 13,
+      "reason": "Penjualan #TRX-20260930065030-458",
+      "user": "Kasir 1"
+    },
+    {
+      "id": "STK-1790751030109",
+      "date": "2026-09-30T06:50:30.094Z",
+      "productId": "P001",
+      "productName": "Beras Rojolele 5kg",
+      "type": "out",
+      "qty": 15,
+      "reason": "Penjualan #TRX-20260930065030-458",
+      "user": "Kasir 1"
+    },
+    {
+      "id": "STK-1790750917602",
+      "date": "2026-09-30T06:48:37.582Z",
+      "productId": "P001",
+      "productName": "Beras Rojolele 5kg",
+      "type": "out",
+      "qty": 1,
+      "reason": "Penjualan #TRX-20260930064837-939",
+      "user": "Kasir 1"
+    },
+    {
+      "id": "STK-1790743051368",
+      "date": "2026-09-30T04:37:30Z",
+      "productId": "P005",
+      "productName": "Indomie Goreng Original",
+      "type": "out",
+      "qty": 2,
+      "reason": "Penjualan #TRX-TEST-002",
+      "user": "Kasir HP"
+    },
+    {
+      "id": "STK-001",
+      "date": "2026-09-29T08:00:00.000Z",
+      "productId": "P001",
+      "productName": "Beras Rojolele 5kg",
+      "type": "in",
+      "qty": 30,
+      "reason": "Restock Supplier PT Beras Nusantara",
+      "user": "Admin"
+    }
+  ]
+}
