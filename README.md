@@ -96,3 +96,4 @@ Aplikasi kini dilengkapi **Mesin Sinkronisasi Realtime (SSE & REST Backend)**:
 - **`F4`** : Tahan pesanan (*Hold Order*).
 - **`F8`** : Buka jendela pembayaran (*Checkout*).
 - **`Esc`**: Tutup modal / popup yang sedang aktif.
+# Cashier-Application
