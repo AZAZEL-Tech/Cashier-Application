@@ -18,11 +18,13 @@ class AppStore {
     this.transactions = this.loadData('pos_transactions', generateSampleTransactions());
     this.expenses = this.loadData('pos_expenses', DEFAULT_EXPENSES);
     this.stockHistory = this.loadData('pos_stock_history', DEFAULT_STOCK_HISTORY);
+    this.discounts = this.loadData('pos_discounts', typeof DEFAULT_DISCOUNTS !== 'undefined' ? DEFAULT_DISCOUNTS : []);
     
     // Active Cart for POS (kept locally per cashier session)
     this.cart = this.loadData('pos_active_cart', []);
     this.heldCarts = this.loadData('pos_held_carts', []);
     this.activeDiscount = Number(localStorage.getItem('pos_cart_discount') || 0);
+    this.activeDiscountInfo = this.loadData('pos_cart_discount_info', null);
     this.customerName = localStorage.getItem('pos_customer_name') || 'Umum';
 
     // Subscribed listeners
@@ -162,6 +164,10 @@ class AppStore {
       this.stockHistory = serverData.stockHistory;
       this.saveData('pos_stock_history', this.stockHistory);
     }
+    if (serverData.discounts) {
+      this.discounts = serverData.discounts;
+      this.saveData('pos_discounts', this.discounts);
+    }
     if (serverData.settings) {
       this.settings = { ...this.settings, ...serverData.settings };
       this.saveData('pos_settings', this.settings);
@@ -287,17 +293,88 @@ class AppStore {
   clearCart() {
     this.cart = [];
     this.activeDiscount = 0;
+    this.activeDiscountInfo = null;
     this.customerName = 'Umum';
     localStorage.removeItem('pos_cart_discount');
+    localStorage.removeItem('pos_cart_discount_info');
     localStorage.removeItem('pos_customer_name');
     this.persistCart();
     this.notify();
   }
 
-  setDiscount(amount) {
+  setDiscount(amount, info = null) {
     this.activeDiscount = Math.max(0, Number(amount) || 0);
+    this.activeDiscountInfo = info || (this.activeDiscount > 0 ? { name: 'Diskon Manual', type: 'fixed', value: this.activeDiscount } : null);
     localStorage.setItem('pos_cart_discount', this.activeDiscount);
+    if (this.activeDiscountInfo) {
+      localStorage.setItem('pos_cart_discount_info', JSON.stringify(this.activeDiscountInfo));
+    } else {
+      localStorage.removeItem('pos_cart_discount_info');
+    }
     this.notify();
+  }
+
+  applyDiscountPromo(discountOrCode) {
+    const subtotal = this.cart.reduce((acc, item) => acc + item.subtotal, 0);
+    if (subtotal <= 0) {
+      return { success: false, message: 'Keranjang belanja masih kosong!' };
+    }
+
+    let discount = null;
+    if (typeof discountOrCode === 'object' && discountOrCode !== null) {
+      discount = discountOrCode;
+    } else {
+      const query = String(discountOrCode || '').trim().toUpperCase();
+      discount = this.discounts.find(d => 
+        (d.code && d.code.toUpperCase() === query) || d.id === discountOrCode || d.name.toUpperCase() === query
+      );
+    }
+
+    if (!discount) {
+      return { success: false, message: 'Kode promo / voucher diskon tidak ditemukan!' };
+    }
+
+    if (!discount.isActive) {
+      return { success: false, message: `Promo "${discount.name}" sedang tidak aktif!` };
+    }
+
+    if (discount.minPurchase && subtotal < Number(discount.minPurchase)) {
+      return { 
+        success: false, 
+        message: `Minimal belanja untuk promo ini adalah ${formatRupiah(discount.minPurchase)} (Saat ini: ${formatRupiah(subtotal)})` 
+      };
+    }
+
+    let calculatedDiscount = 0;
+    if (discount.type === 'percentage') {
+      calculatedDiscount = Math.round((subtotal * Number(discount.value)) / 100);
+      if (discount.maxDiscount && Number(discount.maxDiscount) > 0) {
+        calculatedDiscount = Math.min(calculatedDiscount, Number(discount.maxDiscount));
+      }
+    } else {
+      calculatedDiscount = Math.min(Number(discount.value) || 0, subtotal);
+    }
+
+    this.setDiscount(calculatedDiscount, {
+      id: discount.id,
+      name: discount.name,
+      code: discount.code || '',
+      type: discount.type,
+      value: Number(discount.value),
+      maxDiscount: Number(discount.maxDiscount || 0),
+      minPurchase: Number(discount.minPurchase || 0)
+    });
+
+    return { 
+      success: true, 
+      discountAmount: calculatedDiscount, 
+      name: discount.name, 
+      code: discount.code 
+    };
+  }
+
+  removeDiscount() {
+    this.setDiscount(0, null);
   }
 
   setCustomerName(name) {
@@ -314,7 +391,8 @@ class AppStore {
       customerName: this.customerName,
       note: note || `Pesanan ${this.customerName}`,
       cart: [...this.cart],
-      discount: this.activeDiscount
+      discount: this.activeDiscount,
+      discountInfo: this.activeDiscountInfo
     };
     this.heldCarts.push(held);
     this.saveData('pos_held_carts', this.heldCarts);
@@ -328,6 +406,7 @@ class AppStore {
     const held = this.heldCarts[index];
     this.cart = held.cart;
     this.activeDiscount = held.discount;
+    this.activeDiscountInfo = held.discountInfo || null;
     this.customerName = held.customerName;
     this.heldCarts.splice(index, 1);
     this.saveData('pos_held_carts', this.heldCarts);
@@ -348,7 +427,22 @@ class AppStore {
   getCartCalculations() {
     const subtotal = this.cart.reduce((acc, item) => acc + item.subtotal, 0);
     const totalCost = this.cart.reduce((acc, item) => acc + (item.costPrice * item.qty), 0);
-    const discount = Math.min(this.activeDiscount, subtotal);
+    
+    // Dynamic recalculation for percentage discount if cart contents changed
+    let effectiveDiscount = this.activeDiscount;
+    if (this.activeDiscountInfo && this.activeDiscountInfo.type === 'percentage') {
+      if (this.activeDiscountInfo.minPurchase && subtotal < this.activeDiscountInfo.minPurchase) {
+        effectiveDiscount = 0;
+      } else {
+        let disc = Math.round((subtotal * Number(this.activeDiscountInfo.value)) / 100);
+        if (this.activeDiscountInfo.maxDiscount && Number(this.activeDiscountInfo.maxDiscount) > 0) {
+          disc = Math.min(disc, Number(this.activeDiscountInfo.maxDiscount));
+        }
+        effectiveDiscount = disc;
+      }
+    }
+
+    const discount = Math.min(effectiveDiscount, subtotal);
     const taxableAmount = Math.max(0, subtotal - discount);
     const tax = this.settings.taxRate > 0 ? Math.round((taxableAmount * this.settings.taxRate) / 100) : 0;
     const total = taxableAmount + tax;
@@ -362,7 +456,8 @@ class AppStore {
       tax,
       total,
       profit,
-      totalItems
+      totalItems,
+      discountInfo: this.activeDiscountInfo
     };
   }
 
@@ -521,6 +616,56 @@ class AppStore {
     }
   }
 
+  // ==================== DISCOUNT & PROMO CRUD (SYNCED) ====================
+  async saveDiscount(discountData) {
+    let discountId = discountData.id || ('DSC-' + String(Date.now()).slice(-6));
+
+    const finalDiscount = {
+      id: discountId,
+      name: discountData.name,
+      code: (discountData.code || '').toUpperCase().trim(),
+      type: discountData.type || 'percentage',
+      value: Number(discountData.value) || 0,
+      minPurchase: Number(discountData.minPurchase) || 0,
+      maxDiscount: Number(discountData.maxDiscount) || 0,
+      isActive: discountData.isActive !== undefined ? (discountData.isActive ? 1 : 0) : 1
+    };
+
+    try {
+      await fetch('/api/discounts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(finalDiscount)
+      });
+    } catch (e) {
+      console.warn("Server error, discount saved locally:", e);
+    }
+
+    return finalDiscount;
+  }
+
+  async deleteDiscount(discountId) {
+    try {
+      await fetch(`/api/discounts?id=${discountId}`, {
+        method: 'DELETE'
+      });
+    } catch (e) {
+      console.warn("Server error, discount deleted locally:", e);
+    }
+  }
+
+  async toggleDiscount(discountId) {
+    try {
+      await fetch('/api/discounts/toggle', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: discountId })
+      });
+    } catch (e) {
+      console.warn("Server error, discount toggle failed locally:", e);
+    }
+  }
+
   // ==================== SETTINGS & BACKUP ====================
   async updateSettings(newSettings) {
     try {
@@ -543,7 +688,8 @@ class AppStore {
       products: this.products,
       transactions: this.transactions,
       expenses: this.expenses,
-      stockHistory: this.stockHistory
+      stockHistory: this.stockHistory,
+      discounts: this.discounts
     };
     const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);

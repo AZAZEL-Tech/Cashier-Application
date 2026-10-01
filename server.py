@@ -182,7 +182,31 @@ class RealtimePOSHandler(http.server.SimpleHTTPRequestHandler):
             self.send_json({"success": True, "data": updated_data})
             return
 
-        # 5. Update Settings
+        # 5. Add / Edit Discount Promo
+        if path == "/api/discounts":
+            updated_data = db.save_discount(payload)
+            events.broadcast("discount_update", {
+                "discount": payload,
+                "fullData": updated_data
+            })
+            self.send_json({"success": True, "data": updated_data})
+            return
+
+        # 6. Toggle Discount Active Status
+        if path == "/api/discounts/toggle":
+            disc_id = payload.get("id")
+            if disc_id:
+                updated_data = db.toggle_discount(disc_id)
+                events.broadcast("discount_update", {
+                    "id": disc_id,
+                    "fullData": updated_data
+                })
+                self.send_json({"success": True, "data": updated_data})
+                return
+            self.send_json({"error": "Missing discount ID"}, status=400)
+            return
+
+        # 7. Update Settings
         if path == "/api/settings":
             updated_data = db.update_settings(payload)
             events.broadcast("settings_update", {
@@ -192,7 +216,7 @@ class RealtimePOSHandler(http.server.SimpleHTTPRequestHandler):
             self.send_json({"success": True, "data": updated_data})
             return
 
-        # 6. Import Full Database
+        # 8. Import Full Database
         if path == "/api/import":
             updated_data = db.import_database(payload)
             events.broadcast("db_sync", {
@@ -201,7 +225,7 @@ class RealtimePOSHandler(http.server.SimpleHTTPRequestHandler):
             self.send_json({"success": True, "data": updated_data})
             return
 
-        # 7. Reset Database
+        # 9. Reset Database
         if path == "/api/reset":
             updated_data = db.reset()
             events.broadcast("db_sync", {
@@ -243,6 +267,20 @@ class RealtimePOSHandler(http.server.SimpleHTTPRequestHandler):
                 self.send_json({"success": True, "data": updated_data})
                 return
             self.send_json({"error": "Missing expense ID"}, status=400)
+            return
+
+        # Delete Discount Promo
+        if path == "/api/discounts":
+            disc_id = query.get("id", [None])[0]
+            if disc_id:
+                updated_data = db.delete_discount(disc_id)
+                events.broadcast("discount_delete", {
+                    "id": disc_id,
+                    "fullData": updated_data
+                })
+                self.send_json({"success": True, "data": updated_data})
+                return
+            self.send_json({"error": "Missing discount ID"}, status=400)
             return
 
         self.send_json({"error": "Endpoint not found"}, status=404)

@@ -169,8 +169,27 @@ function renderAdminProducts() {
                   `;
                 }).join('') : `
                   <tr>
-                    <td colspan="8" class="py-12 text-center text-slate-400">
-                      Tidak ada produk yang cocok dengan pencarian.
+                    <td colspan="8" class="py-16 text-center text-slate-400">
+                      <div class="max-w-xs mx-auto space-y-3">
+                        <i data-lucide="package-open" class="w-10 h-10 mx-auto text-slate-300 dark:text-slate-600"></i>
+                        <div>
+                          <p class="font-bold text-sm text-slate-700 dark:text-slate-300">
+                            ${store.products.length === 0 ? 'Katalog Produk Masih Kosong' : 'Tidak ada produk yang cocok'}
+                          </p>
+                          <p class="text-xs text-slate-400 mt-0.5">
+                            ${store.products.length === 0 ? 'Mulai tambahkan produk jualan Anda dengan klik tombol Tambah Produk.' : 'Coba cari dengan kata kunci atau kategori lain.'}
+                          </p>
+                        </div>
+                        ${store.products.length === 0 ? `
+                          <button 
+                            onclick="openProductModal()"
+                            class="px-4 py-2 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs inline-flex items-center space-x-1.5 shadow-md shadow-indigo-600/20 transition"
+                          >
+                            <i data-lucide="plus" class="w-4 h-4"></i>
+                            <span>Tambah Produk Baru</span>
+                          </button>
+                        ` : ''}
+                      </div>
                     </td>
                   </tr>
                 `}

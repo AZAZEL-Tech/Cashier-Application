@@ -56,6 +56,9 @@ function renderNavbar() {
               <button onclick="navigate('admin-products')" class="nav-link px-3 py-2 rounded-lg text-sm font-medium transition ${window.currentTab === 'admin-products' ? 'bg-slate-100 dark:bg-slate-800 text-indigo-600 dark:text-indigo-400' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/50'}">
                 <i data-lucide="package" class="w-4 h-4 inline mr-1.5"></i> Produk & Stok
               </button>
+              <button onclick="navigate('admin-discounts')" class="nav-link px-3 py-2 rounded-lg text-sm font-medium transition ${window.currentTab === 'admin-discounts' ? 'bg-slate-100 dark:bg-slate-800 text-pink-600 dark:text-pink-400' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/50'}">
+                <i data-lucide="ticket-percent" class="w-4 h-4 inline mr-1.5"></i> Diskon & Promo
+              </button>
               <button onclick="navigate('admin-finance')" class="nav-link px-3 py-2 rounded-lg text-sm font-medium transition ${window.currentTab === 'admin-finance' ? 'bg-slate-100 dark:bg-slate-800 text-indigo-600 dark:text-indigo-400' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/50'}">
                 <i data-lucide="wallet" class="w-4 h-4 inline mr-1.5"></i> Keuangan & Laba
               </button>
@@ -112,25 +115,29 @@ function renderNavbar() {
           <span>Ke Admin</span>
         </button>
       ` : `
-        <button onclick="navigate('admin-dashboard')" class="flex flex-col items-center py-1 px-2 ${window.currentTab === 'admin-dashboard' ? 'text-indigo-600 dark:text-indigo-400 font-semibold' : 'text-slate-500 dark:text-slate-400'}">
-          <i data-lucide="layout-dashboard" class="w-5 h-5 mb-0.5"></i>
-          <span>Ringkasan</span>
+        <button onclick="navigate('admin-dashboard')" class="flex flex-col items-center py-1 px-1.5 ${window.currentTab === 'admin-dashboard' ? 'text-indigo-600 dark:text-indigo-400 font-semibold' : 'text-slate-500 dark:text-slate-400'}">
+          <i data-lucide="layout-dashboard" class="w-4 h-4 mb-0.5"></i>
+          <span class="text-[10px]">Ringkasan</span>
         </button>
-        <button onclick="navigate('admin-products')" class="flex flex-col items-center py-1 px-2 ${window.currentTab === 'admin-products' ? 'text-indigo-600 dark:text-indigo-400 font-semibold' : 'text-slate-500 dark:text-slate-400'}">
-          <i data-lucide="package" class="w-5 h-5 mb-0.5"></i>
-          <span>Produk</span>
+        <button onclick="navigate('admin-products')" class="flex flex-col items-center py-1 px-1.5 ${window.currentTab === 'admin-products' ? 'text-indigo-600 dark:text-indigo-400 font-semibold' : 'text-slate-500 dark:text-slate-400'}">
+          <i data-lucide="package" class="w-4 h-4 mb-0.5"></i>
+          <span class="text-[10px]">Produk</span>
         </button>
-        <button onclick="navigate('admin-finance')" class="flex flex-col items-center py-1 px-2 ${window.currentTab === 'admin-finance' ? 'text-indigo-600 dark:text-indigo-400 font-semibold' : 'text-slate-500 dark:text-slate-400'}">
-          <i data-lucide="wallet" class="w-5 h-5 mb-0.5"></i>
-          <span>Keuangan</span>
+        <button onclick="navigate('admin-discounts')" class="flex flex-col items-center py-1 px-1.5 ${window.currentTab === 'admin-discounts' ? 'text-pink-600 dark:text-pink-400 font-semibold' : 'text-slate-500 dark:text-slate-400'}">
+          <i data-lucide="ticket-percent" class="w-4 h-4 mb-0.5"></i>
+          <span class="text-[10px]">Promo</span>
         </button>
-        <button onclick="navigate('admin-transactions')" class="flex flex-col items-center py-1 px-2 ${window.currentTab === 'admin-transactions' ? 'text-indigo-600 dark:text-indigo-400 font-semibold' : 'text-slate-500 dark:text-slate-400'}">
-          <i data-lucide="receipt" class="w-5 h-5 mb-0.5"></i>
-          <span>Transaksi</span>
+        <button onclick="navigate('admin-finance')" class="flex flex-col items-center py-1 px-1.5 ${window.currentTab === 'admin-finance' ? 'text-indigo-600 dark:text-indigo-400 font-semibold' : 'text-slate-500 dark:text-slate-400'}">
+          <i data-lucide="wallet" class="w-4 h-4 mb-0.5"></i>
+          <span class="text-[10px]">Keuangan</span>
         </button>
-        <button onclick="navigate('admin-settings')" class="flex flex-col items-center py-1 px-2 ${window.currentTab === 'admin-settings' ? 'text-indigo-600 dark:text-indigo-400 font-semibold' : 'text-slate-500 dark:text-slate-400'}">
-          <i data-lucide="settings" class="w-5 h-5 mb-0.5"></i>
-          <span>Setting</span>
+        <button onclick="navigate('admin-transactions')" class="flex flex-col items-center py-1 px-1.5 ${window.currentTab === 'admin-transactions' ? 'text-indigo-600 dark:text-indigo-400 font-semibold' : 'text-slate-500 dark:text-slate-400'}">
+          <i data-lucide="receipt" class="w-4 h-4 mb-0.5"></i>
+          <span class="text-[10px]">Transaksi</span>
+        </button>
+        <button onclick="navigate('admin-settings')" class="flex flex-col items-center py-1 px-1.5 ${window.currentTab === 'admin-settings' ? 'text-indigo-600 dark:text-indigo-400 font-semibold' : 'text-slate-500 dark:text-slate-400'}">
+          <i data-lucide="settings" class="w-4 h-4 mb-0.5"></i>
+          <span class="text-[10px]">Setting</span>
         </button>
       `}
     </nav>

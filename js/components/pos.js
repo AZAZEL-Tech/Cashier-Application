@@ -144,13 +144,33 @@ function renderPOS() {
                 </div>
               `;
             }).join('') : `
-              <div class="col-span-full py-12 text-center bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800">
-                <i data-lucide="package-search" class="w-12 h-12 mx-auto text-slate-300 dark:text-slate-600 mb-3"></i>
-                <p class="text-sm font-semibold text-slate-700 dark:text-slate-300">Tidak ada produk ditemukan</p>
-                <p class="text-xs text-slate-400 mt-1">Coba kata kunci lain atau pilih kategori Semua Produk</p>
-                <button onclick="setCategory('all'); clearSearch();" class="mt-3 px-3.5 py-1.5 bg-slate-100 dark:bg-slate-800 text-xs font-semibold rounded-lg text-slate-700 dark:text-slate-300 hover:bg-slate-200">
-                  Reset Pencarian
-                </button>
+              <div class="col-span-full py-16 text-center bg-white dark:bg-slate-900 rounded-3xl border border-dashed border-slate-300 dark:border-slate-800 p-8 space-y-3">
+                <div class="w-16 h-16 rounded-3xl bg-slate-100 dark:bg-slate-800 text-slate-400 mx-auto flex items-center justify-center">
+                  <i data-lucide="package-open" class="w-8 h-8"></i>
+                </div>
+                <div>
+                  <h4 class="font-bold text-sm text-slate-700 dark:text-slate-200">
+                    ${store.products.length === 0 ? 'Belum Ada Produk Ditambahkan' : 'Produk Tidak Ditemukan'}
+                  </h4>
+                  <p class="text-xs text-slate-400 max-w-sm mx-auto mt-1">
+                    ${store.products.length === 0 
+                      ? 'Katalog produk saat ini masih kosong. Silakan tambahkan produk baru di menu Admin > Kelola Produk untuk memulai penjualan.' 
+                      : 'Tidak ada produk yang cocok dengan pencarian atau filter kategori ini.'}
+                  </p>
+                </div>
+                ${store.products.length === 0 ? `
+                  <button 
+                    onclick="store.role === 'admin' ? navigate('admin-products') : openRoleSwitchModal()"
+                    class="mt-2 px-4 py-2.5 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs inline-flex items-center space-x-1.5 shadow-lg shadow-emerald-600/20 transition"
+                  >
+                    <i data-lucide="plus" class="w-4 h-4"></i>
+                    <span>Tambah Produk Pertama</span>
+                  </button>
+                ` : `
+                  <button onclick="setCategory('all'); clearSearch();" class="mt-2 px-3.5 py-1.5 bg-slate-100 dark:bg-slate-800 text-xs font-semibold rounded-xl text-slate-700 dark:text-slate-300 hover:bg-slate-200 transition">
+                    Reset Filter & Pencarian
+                  </button>
+                `}
               </div>
             `}
           </div>
@@ -317,13 +337,20 @@ function renderCartPanel(calc, isMobile = false) {
 
         <!-- Discount row -->
         <div class="flex justify-between items-center text-slate-500 dark:text-slate-400">
-          <button onclick="promptDiscount()" class="text-indigo-600 dark:text-indigo-400 hover:underline flex items-center space-x-1">
-            <i data-lucide="tag" class="w-3 h-3"></i>
-            <span>Diskon Potongan</span>
+          <button onclick="openDiscountModalPos()" class="text-pink-600 dark:text-pink-400 hover:underline flex items-center space-x-1">
+            <i data-lucide="ticket-percent" class="w-3.5 h-3.5"></i>
+            <span>${store.activeDiscountInfo ? store.activeDiscountInfo.name : 'Voucher / Diskon'}</span>
           </button>
-          <span class="font-semibold text-rose-500">
-            ${calc.discount > 0 ? `- ${formatRupiah(calc.discount)}` : 'Rp 0'}
-          </span>
+          <div class="flex items-center space-x-1.5">
+            <span class="font-bold ${calc.discount > 0 ? 'text-rose-500' : 'text-slate-400'}">
+              ${calc.discount > 0 ? `- ${formatRupiah(calc.discount)}` : 'Rp 0'}
+            </span>
+            ${calc.discount > 0 ? `
+              <button onclick="window.store.removeDiscount(); window.renderApp();" title="Hapus Diskon" class="p-0.5 text-slate-300 hover:text-rose-500 transition">
+                <i data-lucide="x" class="w-3.5 h-3.5"></i>
+              </button>
+            ` : ''}
+          </div>
         </div>
 
         ${store.settings.taxRate > 0 ? `
@@ -399,12 +426,7 @@ function toggleMobileCart(open) {
 }
 
 function promptDiscount() {
-  const current = window.store.activeDiscount;
-  const input = prompt("Masukkan nominal diskon potongan (Rp):", current);
-  if (input !== null) {
-    const val = Math.max(0, parseInt(input) || 0);
-    window.store.setDiscount(val);
-  }
+  openDiscountModalPos();
 }
 
 function promptHoldCart() {

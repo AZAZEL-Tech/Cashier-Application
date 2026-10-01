@@ -97,6 +97,20 @@ CREATE TABLE IF NOT EXISTS `stock_history` (
   INDEX `idx_stk_date` (`date`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- 8. DISCOUNTS & PROMO VOUCHERS TABLE
+CREATE TABLE IF NOT EXISTS `discounts` (
+  `id` VARCHAR(64) NOT NULL PRIMARY KEY,
+  `name` VARCHAR(128) NOT NULL,
+  `code` VARCHAR(64) DEFAULT '',
+  `type` VARCHAR(32) NOT NULL DEFAULT 'percentage', -- 'percentage' | 'fixed'
+  `value` DECIMAL(15,2) NOT NULL DEFAULT 0,
+  `minPurchase` DECIMAL(15,2) DEFAULT 0,
+  `maxDiscount` DECIMAL(15,2) DEFAULT 0,
+  `isActive` TINYINT(1) DEFAULT 1,
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  INDEX `idx_discount_code` (`code`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- ============================================================
 -- SEED DEFAULT SETTINGS & CATEGORIES
 -- ============================================================
@@ -124,20 +138,3 @@ INSERT IGNORE INTO `categories` (`id`, `name`, `icon`) VALUES
 ('kebersihan', 'Sabun & Cuci', 'sparkles'),
 ('lainnya', 'Lain-lain', 'package');
 
--- SEED INITIAL SAMPLE PRODUCTS
-INSERT IGNORE INTO `products` (`id`, `name`, `barcode`, `category`, `costPrice`, `sellPrice`, `stock`, `minStock`, `unit`, `image`) VALUES
-('P001', 'Beras Rojolele 5kg', '8991001', 'sembako', 65000, 75000, 24, 5, 'sak', 'https://images.unsplash.com/photo-1586201375761-83865001e31c?w=400&auto=format&fit=crop&q=60'),
-('P002', 'Minyak Goreng Bimoli 2L', '8991002', 'sembako', 32000, 37000, 18, 5, 'pouch', 'https://images.unsplash.com/photo-1474979266404-7eaacbcd87c5?w=400&auto=format&fit=crop&q=60'),
-('P003', 'Gula Pasir Gulaku 1kg', '8991003', 'sembako', 15500, 18000, 35, 10, 'kg', 'https://images.unsplash.com/photo-1622484216805-4c07914fa679?w=400&auto=format&fit=crop&q=60'),
-('P004', 'Telur Ayam 1kg', '8991004', 'sembako', 26000, 29000, 40, 8, 'kg', 'https://images.unsplash.com/photo-1582722872445-44dc5f7e3c8f?w=400&auto=format&fit=crop&q=60'),
-('P005', 'Indomie Goreng Original', '8991005', 'makanan', 2700, 3500, 120, 20, 'bks', 'https://images.unsplash.com/photo-1612927601601-6638404737ce?w=400&auto=format&fit=crop&q=60'),
-('P006', 'Indomie Kuah Ayam Bawang', '8991006', 'makanan', 2700, 3500, 80, 15, 'bks', 'https://images.unsplash.com/photo-1569718212165-3a8278d5f624?w=400&auto=format&fit=crop&q=60'),
-('P007', 'Teh Pucuk Harum 350ml', '8991007', 'minuman', 3000, 4000, 48, 12, 'btl', 'https://images.unsplash.com/photo-1556881286-fc6915169721?w=400&auto=format&fit=crop&q=60'),
-('P008', 'Aqua Botol 600ml', '8991008', 'minuman', 2500, 3500, 60, 12, 'btl', 'https://images.unsplash.com/photo-1548839140-29a749e1bc4e?w=400&auto=format&fit=crop&q=60'),
-('P009', 'Kopi Kapal Api Spesial Mix', '8991009', 'minuman', 1500, 2000, 90, 15, 'sachet', 'https://images.unsplash.com/photo-1514432324607-a09d9b4aefdd?w=400&auto=format&fit=crop&q=60'),
-('P010', 'Chitato Sapi Panggang 68g', '8991010', 'snack', 9500, 12000, 25, 5, 'bks', 'https://images.unsplash.com/photo-1566478989037-eec170784d0b?w=400&auto=format&fit=crop&q=60'),
-('P011', 'Oreo Vanilla 133g', '8991011', 'snack', 8000, 10000, 30, 6, 'pack', 'https://images.unsplash.com/photo-1558961363-fa8fdf82db35?w=400&auto=format&fit=crop&q=60'),
-('P012', 'Sampoerna Mild 16', '8991012', 'rokok', 31000, 34000, 3, 10, 'bks', 'https://images.unsplash.com/photo-1527661591475-527312dd65f5?w=400&auto=format&fit=crop&q=60'),
-('P013', 'Gudang Garam Surya 12', '8991013', 'rokok', 24000, 27000, 2, 10, 'bks', 'https://images.unsplash.com/photo-1527661591475-527312dd65f5?w=400&auto=format&fit=crop&q=60'),
-('P014', 'Sunlight Pencuci Piring 700ml', '8991014', 'kebersihan', 13000, 16000, 15, 4, 'pouch', 'https://images.unsplash.com/photo-1585670210693-e7fdd16b142e?w=400&auto=format&fit=crop&q=60'),
-('P015', 'Rinso Anti Noda 770g', '8991015', 'kebersihan', 20000, 24500, 12, 4, 'bks', 'https://images.unsplash.com/photo-1585670210693-e7fdd16b142e?w=400&auto=format&fit=crop&q=60');

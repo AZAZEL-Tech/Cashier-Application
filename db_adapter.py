@@ -50,23 +50,7 @@ DEFAULT_CATEGORIES = [
     { "id": "lainnya", "name": "Lain-lain", "icon": "package" }
 ]
 
-DEFAULT_PRODUCTS = [
-    { "id": "P001", "name": "Beras Rojolele 5kg", "barcode": "8991001", "category": "sembako", "costPrice": 65000, "sellPrice": 75000, "stock": 24, "minStock": 5, "unit": "sak", "image": "https://images.unsplash.com/photo-1586201375761-83865001e31c?w=400&auto=format&fit=crop&q=60" },
-    { "id": "P002", "name": "Minyak Goreng Bimoli 2L", "barcode": "8991002", "category": "sembako", "costPrice": 32000, "sellPrice": 37000, "stock": 18, "minStock": 5, "unit": "pouch", "image": "https://images.unsplash.com/photo-1474979266404-7eaacbcd87c5?w=400&auto=format&fit=crop&q=60" },
-    { "id": "P003", "name": "Gula Pasir Gulaku 1kg", "barcode": "8991003", "category": "sembako", "costPrice": 15500, "sellPrice": 18000, "stock": 35, "minStock": 10, "unit": "kg", "image": "https://images.unsplash.com/photo-1622484216805-4c07914fa679?w=400&auto=format&fit=crop&q=60" },
-    { "id": "P004", "name": "Telur Ayam 1kg", "barcode": "8991004", "category": "sembako", "costPrice": 26000, "sellPrice": 29000, "stock": 40, "minStock": 8, "unit": "kg", "image": "https://images.unsplash.com/photo-1582722872445-44dc5f7e3c8f?w=400&auto=format&fit=crop&q=60" },
-    { "id": "P005", "name": "Indomie Goreng Original", "barcode": "8991005", "category": "makanan", "costPrice": 2700, "sellPrice": 3500, "stock": 120, "minStock": 20, "unit": "bks", "image": "https://images.unsplash.com/photo-1612927601601-6638404737ce?w=400&auto=format&fit=crop&q=60" },
-    { "id": "P006", "name": "Indomie Kuah Ayam Bawang", "barcode": "8991006", "category": "makanan", "costPrice": 2700, "sellPrice": 3500, "stock": 80, "minStock": 15, "unit": "bks", "image": "https://images.unsplash.com/photo-1569718212165-3a8278d5f624?w=400&auto=format&fit=crop&q=60" },
-    { "id": "P007", "name": "Teh Pucuk Harum 350ml", "barcode": "8991007", "category": "minuman", "costPrice": 3000, "sellPrice": 4000, "stock": 48, "minStock": 12, "unit": "btl", "image": "https://images.unsplash.com/photo-1556881286-fc6915169721?w=400&auto=format&fit=crop&q=60" },
-    { "id": "P008", "name": "Aqua Botol 600ml", "barcode": "8991008", "category": "minuman", "costPrice": 2500, "sellPrice": 3500, "stock": 60, "minStock": 12, "unit": "btl", "image": "https://images.unsplash.com/photo-1548839140-29a749e1bc4e?w=400&auto=format&fit=crop&q=60" },
-    { "id": "P009", "name": "Kopi Kapal Api Spesial Mix", "barcode": "8991009", "category": "minuman", "costPrice": 1500, "sellPrice": 2000, "stock": 90, "minStock": 15, "unit": "sachet", "image": "https://images.unsplash.com/photo-1514432324607-a09d9b4aefdd?w=400&auto=format&fit=crop&q=60" },
-    { "id": "P010", "name": "Chitato Sapi Panggang 68g", "barcode": "8991010", "category": "snack", "costPrice": 9500, "sellPrice": 12000, "stock": 25, "minStock": 5, "unit": "bks", "image": "https://images.unsplash.com/photo-1566478989037-eec170784d0b?w=400&auto=format&fit=crop&q=60" },
-    { "id": "P011", "name": "Oreo Vanilla 133g", "barcode": "8991011", "category": "snack", "costPrice": 8000, "sellPrice": 10000, "stock": 30, "minStock": 6, "unit": "pack", "image": "https://images.unsplash.com/photo-1558961363-fa8fdf82db35?w=400&auto=format&fit=crop&q=60" },
-    { "id": "P012", "name": "Sampoerna Mild 16", "barcode": "8991012", "category": "rokok", "costPrice": 31000, "sellPrice": 34000, "stock": 3, "minStock": 10, "unit": "bks", "image": "https://images.unsplash.com/photo-1527661591475-527312dd65f5?w=400&auto=format&fit=crop&q=60" },
-    { "id": "P013", "name": "Gudang Garam Surya 12", "barcode": "8991013", "category": "rokok", "costPrice": 24000, "sellPrice": 27000, "stock": 2, "minStock": 10, "unit": "bks", "image": "https://images.unsplash.com/photo-1527661591475-527312dd65f5?w=400&auto=format&fit=crop&q=60" },
-    { "id": "P014", "name": "Sunlight Pencuci Piring 700ml", "barcode": "8991014", "category": "kebersihan", "costPrice": 13000, "sellPrice": 16000, "stock": 15, "minStock": 4, "unit": "pouch", "image": "https://images.unsplash.com/photo-1585670210693-e7fdd16b142e?w=400&auto=format&fit=crop&q=60" },
-    { "id": "P015", "name": "Rinso Anti Noda 770g", "barcode": "8991015", "category": "kebersihan", "costPrice": 20000, "sellPrice": 24500, "stock": 12, "minStock": 4, "unit": "bks", "image": "https://images.unsplash.com/photo-1585670210693-e7fdd16b142e?w=400&auto=format&fit=crop&q=60" }
-]
+DEFAULT_PRODUCTS = []
 
 
 class DatabaseEngine:
@@ -76,7 +60,7 @@ class DatabaseEngine:
         self.data_dir = os.path.join(base_dir, "data")
         os.makedirs(self.data_dir, exist_ok=True)
         self.sqlite_file = os.path.join(self.data_dir, "pos_database.db")
-        self.lock = threading.Lock()
+        self.lock = threading.RLock()
         self.driver_type = "sqlite"
         self.mysql_config = {}
 
@@ -249,6 +233,20 @@ class DatabaseEngine:
                     INDEX `idx_stk_date` (`date`)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
                 """)
+                cur.execute("""
+                CREATE TABLE IF NOT EXISTS `discounts` (
+                    `id` VARCHAR(64) NOT NULL PRIMARY KEY,
+                    `name` VARCHAR(128) NOT NULL,
+                    `code` VARCHAR(64) DEFAULT '',
+                    `type` VARCHAR(32) NOT NULL DEFAULT 'percentage',
+                    `value` DECIMAL(15,2) NOT NULL DEFAULT 0,
+                    `minPurchase` DECIMAL(15,2) DEFAULT 0,
+                    `maxDiscount` DECIMAL(15,2) DEFAULT 0,
+                    `isActive` TINYINT(1) DEFAULT 1,
+                    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    INDEX `idx_discount_code` (`code`)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+                """)
         finally:
             conn.close()
 
@@ -340,6 +338,19 @@ class DatabaseEngine:
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
             """)
+            cur.execute("""
+            CREATE TABLE IF NOT EXISTS discounts (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                code TEXT DEFAULT '',
+                type TEXT NOT NULL DEFAULT 'percentage',
+                value REAL NOT NULL DEFAULT 0,
+                minPurchase REAL DEFAULT 0,
+                maxDiscount REAL DEFAULT 0,
+                isActive INTEGER DEFAULT 1,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+            """)
             conn.commit()
         finally:
             conn.close()
@@ -357,14 +368,6 @@ class DatabaseEngine:
                 if cur.fetchone()["count"] == 0:
                     for cat in DEFAULT_CATEGORIES:
                         cur.execute("INSERT INTO categories (id, name, icon) VALUES (%s, %s, %s)", (cat["id"], cat["name"], cat["icon"]))
-
-                cur.execute("SELECT COUNT(*) as count FROM products")
-                if cur.fetchone()["count"] == 0:
-                    for p in DEFAULT_PRODUCTS:
-                        cur.execute("""
-                        INSERT INTO products (id, name, barcode, category, costPrice, sellPrice, stock, minStock, unit, image)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                        """, (p["id"], p["name"], p["barcode"], p["category"], p["costPrice"], p["sellPrice"], p["stock"], p["minStock"], p["unit"], p["image"]))
         finally:
             conn.close()
 
@@ -381,14 +384,6 @@ class DatabaseEngine:
             if cur.fetchone()[0] == 0:
                 for cat in DEFAULT_CATEGORIES:
                     cur.execute("INSERT INTO categories (id, name, icon) VALUES (?, ?, ?)", (cat["id"], cat["name"], cat["icon"]))
-
-            cur.execute("SELECT COUNT(*) as count FROM products")
-            if cur.fetchone()[0] == 0:
-                for p in DEFAULT_PRODUCTS:
-                    cur.execute("""
-                    INSERT INTO products (id, name, barcode, category, costPrice, sellPrice, stock, minStock, unit, image)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """, (p["id"], p["name"], p["barcode"], p["category"], p["costPrice"], p["sellPrice"], p["stock"], p["minStock"], p["unit"], p["image"]))
             conn.commit()
         finally:
             conn.close()
@@ -447,10 +442,20 @@ class DatabaseEngine:
                 cur.execute("SELECT id, date, productId, productName, type, qty, reason, user FROM stock_history ORDER BY date DESC LIMIT 500")
                 stock_history = cur.fetchall()
 
+                # Discounts
+                try:
+                    cur.execute("SELECT id, name, code, type, CAST(value AS SIGNED) as value, CAST(minPurchase AS SIGNED) as minPurchase, CAST(maxDiscount AS SIGNED) as maxDiscount, isActive FROM discounts ORDER BY created_at DESC")
+                    discounts = cur.fetchall()
+                    for d in discounts:
+                        d["isActive"] = bool(d["isActive"])
+                except Exception:
+                    discounts = []
+
                 return {
                     "settings": settings_map,
                     "categories": categories,
                     "products": products,
+                    "discounts": discounts,
                     "transactions": transactions,
                     "expenses": expenses,
                     "stockHistory": stock_history
@@ -505,10 +510,20 @@ class DatabaseEngine:
             cur.execute("SELECT id, date, productId, productName, type, qty, reason, user FROM stock_history ORDER BY date DESC LIMIT 500")
             stock_history = [dict(r) for r in cur.fetchall()]
 
+            # Discounts
+            try:
+                cur.execute("SELECT id, name, code, type, value, minPurchase, maxDiscount, isActive FROM discounts ORDER BY created_at DESC")
+                discounts = [dict(r) for r in cur.fetchall()]
+                for d in discounts:
+                    d["isActive"] = bool(d["isActive"])
+            except Exception:
+                discounts = []
+
             return {
                 "settings": settings_map,
                 "categories": categories,
                 "products": products,
+                "discounts": discounts,
                 "transactions": transactions,
                 "expenses": expenses,
                 "stockHistory": stock_history
@@ -816,6 +831,87 @@ class DatabaseEngine:
                         INSERT OR REPLACE INTO settings (setting_key, setting_val)
                         VALUES (?, ?)
                         """, (k, json.dumps(v)))
+                    conn.commit()
+                finally:
+                    conn.close()
+            return self.get_all()
+
+    def save_discount(self, discount_data):
+        with self.lock:
+            disc_id = discount_data.get("id")
+            if not disc_id:
+                disc_id = f"DSC-{str(int(time.time()*1000))[-6:]}"
+                discount_data["id"] = disc_id
+
+            name = discount_data.get("name", "")
+            code = (discount_data.get("code") or "").strip().upper()
+            disc_type = discount_data.get("type", "percentage")
+            value = float(discount_data.get("value", 0))
+            min_purchase = float(discount_data.get("minPurchase", 0))
+            max_discount = float(discount_data.get("maxDiscount", 0))
+            is_active = 1 if discount_data.get("isActive", True) else 0
+
+            if self.driver_type == "mysql":
+                conn = self._get_mysql_connection()
+                try:
+                    with conn.cursor() as cur:
+                        cur.execute("""
+                        INSERT INTO discounts (id, name, code, type, value, minPurchase, maxDiscount, isActive)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                        ON DUPLICATE KEY UPDATE
+                            name=VALUES(name), code=VALUES(code), type=VALUES(type),
+                            value=VALUES(value), minPurchase=VALUES(minPurchase),
+                            maxDiscount=VALUES(maxDiscount), isActive=VALUES(isActive)
+                        """, (disc_id, name, code, disc_type, value, min_purchase, max_discount, is_active))
+                finally:
+                    conn.close()
+            else:
+                conn = self._get_sqlite_connection()
+                try:
+                    cur = conn.cursor()
+                    cur.execute("""
+                    INSERT OR REPLACE INTO discounts (id, name, code, type, value, minPurchase, maxDiscount, isActive)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (disc_id, name, code, disc_type, value, min_purchase, max_discount, is_active))
+                    conn.commit()
+                finally:
+                    conn.close()
+
+            return self.get_all()
+
+    def delete_discount(self, disc_id):
+        with self.lock:
+            if self.driver_type == "mysql":
+                conn = self._get_mysql_connection()
+                try:
+                    with conn.cursor() as cur:
+                        cur.execute("DELETE FROM discounts WHERE id = %s", (disc_id,))
+                finally:
+                    conn.close()
+            else:
+                conn = self._get_sqlite_connection()
+                try:
+                    cur = conn.cursor()
+                    cur.execute("DELETE FROM discounts WHERE id = ?", (disc_id,))
+                    conn.commit()
+                finally:
+                    conn.close()
+            return self.get_all()
+
+    def toggle_discount(self, disc_id):
+        with self.lock:
+            if self.driver_type == "mysql":
+                conn = self._get_mysql_connection()
+                try:
+                    with conn.cursor() as cur:
+                        cur.execute("UPDATE discounts SET isActive = CASE WHEN isActive = 1 THEN 0 ELSE 1 END WHERE id = %s", (disc_id,))
+                finally:
+                    conn.close()
+            else:
+                conn = self._get_sqlite_connection()
+                try:
+                    cur = conn.cursor()
+                    cur.execute("UPDATE discounts SET isActive = CASE WHEN isActive = 1 THEN 0 ELSE 1 END WHERE id = ?", (disc_id,))
                     conn.commit()
                 finally:
                     conn.close()

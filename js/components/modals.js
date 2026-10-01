@@ -878,3 +878,296 @@ function closeModal() {
   const container = document.getElementById('modal-container');
   if (container) container.innerHTML = '';
 }
+
+// ==================== POS DISCOUNT & PROMO SELECTOR MODAL ====================
+function openDiscountModalPos() {
+  const store = window.store;
+  const calc = store.getCartCalculations();
+  const subtotal = calc.subtotal;
+  const activeDiscounts = (store.discounts || []).filter(d => Boolean(d.isActive));
+  const currentDiscount = store.activeDiscount;
+  const currentInfo = store.activeDiscountInfo;
+
+  const container = document.getElementById('modal-container');
+  if (!container) return;
+
+  container.innerHTML = `
+    <div class="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+      <div class="bg-white dark:bg-slate-900 rounded-3xl w-full max-w-lg shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden animate-in zoom-in-95 duration-150">
+        
+        <!-- Header -->
+        <div class="px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+          <div class="flex items-center space-x-2.5">
+            <div class="w-9 h-9 rounded-xl bg-pink-50 dark:bg-pink-950 text-pink-600 dark:text-pink-400 flex items-center justify-center">
+              <i data-lucide="ticket-percent" class="w-5 h-5"></i>
+            </div>
+            <div>
+              <h3 class="font-bold text-base text-slate-800 dark:text-white">Pilih Diskon & Voucher Promo</h3>
+              <p class="text-xs text-slate-400">Total Belanja: <span class="font-bold text-slate-700 dark:text-slate-200">${formatRupiah(subtotal)}</span></p>
+            </div>
+          </div>
+          <button onclick="closeModal()" class="p-2 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800">
+            <i data-lucide="x" class="w-5 h-5"></i>
+          </button>
+        </div>
+
+        <div class="p-6 space-y-5 max-h-[75vh] overflow-y-auto">
+          
+          <!-- Currently Active Discount Banner (If Any) -->
+          ${currentDiscount > 0 ? `
+            <div class="p-3.5 rounded-2xl bg-pink-50/80 dark:bg-pink-950/40 border border-pink-200 dark:border-pink-800/60 flex items-center justify-between">
+              <div class="flex items-center space-x-2.5">
+                <div class="w-7 h-7 rounded-lg bg-pink-500 text-white flex items-center justify-center">
+                  <i data-lucide="check" class="w-4 h-4"></i>
+                </div>
+                <div>
+                  <p class="text-xs font-bold text-pink-900 dark:text-pink-200">${currentInfo ? currentInfo.name : 'Diskon Terpasang'}</p>
+                  <p class="text-[11px] text-pink-700 dark:text-pink-300 font-bold">Potongan: ${formatRupiah(currentDiscount)}</p>
+                </div>
+              </div>
+              <button 
+                onclick="handleRemovePosDiscount()" 
+                class="px-3 py-1.5 rounded-xl bg-white dark:bg-slate-800 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-900/60 font-bold text-xs hover:bg-rose-50 transition"
+              >
+                Hapus Diskon
+              </button>
+            </div>
+          ` : ''}
+
+          <!-- Voucher Code Input -->
+          <div>
+            <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">Punya Kode Voucher Promo?</label>
+            <div class="flex gap-2">
+              <div class="relative flex-1">
+                <i data-lucide="tag" class="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400"></i>
+                <input 
+                  type="text" 
+                  id="voucher-code-input"
+                  placeholder="Ketik kode promo (Contoh: HEMAT10)..."
+                  style="text-transform: uppercase;"
+                  onkeydown="if(event.key === 'Enter'){ event.preventDefault(); handleApplyVoucherCode(); }"
+                  class="w-full pl-10 pr-3 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-mono font-bold text-slate-900 dark:text-white uppercase focus:ring-2 focus:ring-pink-500 focus:outline-none"
+                />
+              </div>
+              <button 
+                type="button" 
+                onclick="handleApplyVoucherCode()"
+                class="px-4 py-2.5 rounded-xl bg-pink-600 hover:bg-pink-500 text-white font-bold text-xs shadow-md shadow-pink-600/20 active:scale-95 transition"
+              >
+                Terapkan
+              </button>
+            </div>
+          </div>
+
+          <!-- Active Promo Presets List -->
+          <div>
+            <div class="flex items-center justify-between mb-2">
+              <h4 class="text-xs font-bold text-slate-700 dark:text-slate-300">Daftar Promo Tersedia (${activeDiscounts.length})</h4>
+              ${store.currentRole === 'admin' ? `
+                <button onclick="closeModal(); navigate('admin-discounts');" class="text-[11px] text-pink-600 dark:text-pink-400 font-semibold hover:underline flex items-center space-x-0.5">
+                  <i data-lucide="settings" class="w-3 h-3"></i>
+                  <span>Kelola di Admin</span>
+                </button>
+              ` : ''}
+            </div>
+
+            ${activeDiscounts.length > 0 ? `
+              <div class="space-y-2.5">
+                ${activeDiscounts.map(d => {
+                  const minPurchase = Number(d.minPurchase || 0);
+                  const isEligible = subtotal >= minPurchase;
+                  const deficit = Math.max(0, minPurchase - subtotal);
+                  const isSelected = currentInfo && (currentInfo.id === d.id || currentInfo.name === d.name);
+
+                  let discountPreview = 0;
+                  if (d.type === 'percentage') {
+                    discountPreview = Math.round((subtotal * Number(d.value)) / 100);
+                    if (d.maxDiscount && Number(d.maxDiscount) > 0) {
+                      discountPreview = Math.min(discountPreview, Number(d.maxDiscount));
+                    }
+                  } else {
+                    discountPreview = Math.min(Number(d.value), subtotal);
+                  }
+
+                  return `
+                    <div class="p-3.5 rounded-2xl border transition ${
+                      isSelected 
+                        ? 'border-pink-500 bg-pink-50/50 dark:bg-pink-950/30' 
+                        : isEligible 
+                          ? 'border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/50 hover:border-pink-300' 
+                          : 'border-slate-200/50 dark:border-slate-800/40 bg-slate-100/40 dark:bg-slate-800/20 opacity-70'
+                    }">
+                      <div class="flex items-center justify-between">
+                        <div class="space-y-0.5 flex-1 pr-3">
+                          <div class="flex items-center space-x-2">
+                            <span class="font-bold text-xs text-slate-800 dark:text-white">${d.name}</span>
+                            ${d.code ? `
+                              <span class="px-1.5 py-0.5 rounded bg-pink-100 dark:bg-pink-950 text-pink-700 dark:text-pink-300 font-mono text-[10px] font-bold">
+                                ${d.code}
+                              </span>
+                            ` : ''}
+                          </div>
+                          
+                          <div class="flex flex-wrap items-center gap-2 text-[11px] text-slate-500 dark:text-slate-400">
+                            <span class="font-semibold text-pink-600 dark:text-pink-400">
+                              Diskon: ${d.type === 'percentage' ? `${d.value}%` : formatRupiah(d.value)}
+                            </span>
+                            ${d.maxDiscount && Number(d.maxDiscount) > 0 ? `
+                              <span>(Maks. ${formatRupiah(d.maxDiscount)})</span>
+                            ` : ''}
+                            ${minPurchase > 0 ? `
+                              <span>• Min. ${formatRupiah(minPurchase)}</span>
+                            ` : '• Tanpa Min. Belanja'}
+                          </div>
+
+                          ${!isEligible ? `
+                            <p class="text-[10px] text-amber-600 dark:text-amber-400 font-semibold mt-1">
+                              ⚠️ Belanja kurang ${formatRupiah(deficit)} lagi untuk promo ini
+                            </p>
+                          ` : (subtotal > 0 ? `
+                            <p class="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold mt-0.5">
+                              ✨ Hemat ${formatRupiah(discountPreview)}
+                            </p>
+                          ` : '')}
+                        </div>
+
+                        <div>
+                          ${isSelected ? `
+                            <span class="px-3 py-1.5 rounded-xl bg-pink-600 text-white font-bold text-xs inline-flex items-center space-x-1">
+                              <i data-lucide="check" class="w-3.5 h-3.5"></i>
+                              <span>Aktif</span>
+                            </span>
+                          ` : `
+                            <button 
+                              type="button"
+                              ${!isEligible ? 'disabled' : ''}
+                              onclick="handleApplyDiscountPreset('${d.id}')"
+                              class="px-3 py-1.5 rounded-xl font-bold text-xs transition ${
+                                isEligible 
+                                  ? 'bg-white dark:bg-slate-800 text-pink-600 dark:text-pink-400 border border-pink-300 dark:border-pink-800 hover:bg-pink-600 hover:text-white active:scale-95 shadow-xs' 
+                                  : 'bg-slate-200 dark:bg-slate-800 text-slate-400 cursor-not-allowed border border-transparent'
+                              }"
+                            >
+                              Pakai
+                            </button>
+                          `}
+                        </div>
+                      </div>
+                    </div>
+                  `;
+                }).join('')}
+              </div>
+            ` : `
+              <div class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-800 text-center space-y-1">
+                <p class="text-xs font-semibold text-slate-600 dark:text-slate-300">Belum ada promo voucher aktif dari Admin</p>
+                <p class="text-[11px] text-slate-400">Admin dapat menambahkan diskon & promo baru di menu Diskon & Promo.</p>
+              </div>
+            `}
+          </div>
+
+          <!-- Manual Discount Input (Nominal Rp) -->
+          <div class="pt-3 border-t border-slate-100 dark:border-slate-800">
+            <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">Atau Masukkan Diskon Manual (Rp)</label>
+            <div class="flex gap-2">
+              <input 
+                type="number" 
+                id="manual-discount-input" 
+                min="0"
+                placeholder="Contoh: 5000"
+                value="${currentInfo && currentInfo.name === 'Diskon Manual' ? currentDiscount : ''}"
+                class="flex-1 px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-800 dark:text-white focus:ring-2 focus:ring-pink-500 focus:outline-none"
+              />
+              <button 
+                type="button" 
+                onclick="handleApplyManualDiscount()"
+                class="px-4 py-2.5 rounded-xl bg-slate-800 dark:bg-slate-700 hover:bg-slate-700 text-white font-bold text-xs transition"
+              >
+                Set Diskon
+              </button>
+            </div>
+
+            <!-- Quick Shortcut Chips -->
+            <div class="flex flex-wrap gap-1.5 mt-2">
+              ${[2000, 5000, 10000, 15000, 20000, 50000].map(amt => `
+                <button 
+                  type="button" 
+                  onclick="document.getElementById('manual-discount-input').value = ${amt}; handleApplyManualDiscount();"
+                  class="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-[11px] font-semibold text-slate-700 dark:text-slate-300 hover:bg-pink-50 hover:text-pink-600 hover:border-pink-300 border border-slate-200 dark:border-slate-700 transition"
+                >
+                  ${formatRupiah(amt)}
+                </button>
+              `).join('')}
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Footer -->
+        <div class="px-6 py-3.5 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 flex justify-end">
+          <button 
+            type="button" 
+            onclick="closeModal()" 
+            class="px-4 py-2 rounded-xl bg-slate-900 dark:bg-slate-700 hover:bg-slate-800 text-white font-bold text-xs transition"
+          >
+            Selesai
+          </button>
+        </div>
+
+      </div>
+    </div>
+  `;
+
+  lucide.createIcons();
+}
+
+function handleApplyVoucherCode() {
+  const input = document.getElementById('voucher-code-input');
+  if (!input) return;
+  const code = input.value.trim();
+  if (!code) {
+    alert("Silakan ketik kode voucher promo!");
+    return;
+  }
+
+  const res = window.store.applyDiscountPromo(code);
+  if (!res.success) {
+    alert(res.message);
+    return;
+  }
+
+  closeModal();
+  window.renderApp();
+  window.store.showRealtimeToast(`🎉 Promo "${res.name}" berhasil digunakan! Diskon: ${formatRupiah(res.discountAmount)}`);
+}
+
+function handleApplyDiscountPreset(discountId) {
+  const res = window.store.applyDiscountPromo(discountId);
+  if (!res.success) {
+    alert(res.message);
+    return;
+  }
+
+  closeModal();
+  window.renderApp();
+  window.store.showRealtimeToast(`🎉 Promo "${res.name}" aktif! Diskon: ${formatRupiah(res.discountAmount)}`);
+}
+
+function handleApplyManualDiscount() {
+  const input = document.getElementById('manual-discount-input');
+  if (!input) return;
+  const val = Math.max(0, Number(input.value) || 0);
+  window.store.setDiscount(val, val > 0 ? { name: 'Diskon Manual', type: 'fixed', value: val } : null);
+  closeModal();
+  window.renderApp();
+  if (val > 0) {
+    window.store.showRealtimeToast(`✂️ Diskon manual ${formatRupiah(val)} diterapkan.`);
+  }
+}
+
+function handleRemovePosDiscount() {
+  window.store.removeDiscount();
+  closeModal();
+  window.renderApp();
+  window.store.showRealtimeToast('Diskon telah dihapus dari keranjang.');
+}
+

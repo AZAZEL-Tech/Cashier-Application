@@ -40,6 +40,9 @@ function renderApp() {
     case 'admin-products':
       mainContent = renderAdminProducts();
       break;
+    case 'admin-discounts':
+      mainContent = renderAdminDiscounts();
+      break;
     case 'admin-finance':
       mainContent = renderAdminFinance();
       break;
