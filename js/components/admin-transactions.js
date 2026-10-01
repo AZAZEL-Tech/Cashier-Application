@@ -117,7 +117,7 @@ function renderAdminTransactions() {
                     <td class="py-3 px-4 text-right font-mono font-semibold text-emerald-600 dark:text-emerald-400">+${formatRupiah(t.profit)}</td>
                     <td class="py-3 px-4 text-center">
                       <button 
-                        onclick="openReceiptModal(${JSON.stringify(t).replace(/"/g, '&quot;')})"
+                        onclick="openReceiptModalById('${t.id}')"
                         title="Lihat / Cetak Ulang Struk"
                         class="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 transition"
                       >

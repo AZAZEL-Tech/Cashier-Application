@@ -349,14 +349,35 @@ function generateQrisQRCode(nominal) {
   }, 50);
 }
 
-function submitCheckout() {
+async function submitCheckout() {
   const store = window.store;
-  const trx = store.processCheckout(activePaymentTab, cashAmountGiven, store.customerName);
-  if (!trx) return;
+  const submitBtn = document.getElementById('checkout-submit-btn');
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.innerText = 'Memproses...';
+  }
 
-  lastCompletedTransaction = trx;
-  closeModal();
-  openPaymentSuccessModal(trx);
+  try {
+    const trx = await store.processCheckout(activePaymentTab, cashAmountGiven, store.customerName);
+    if (!trx) {
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.innerText = 'Selesaikan Pembayaran';
+      }
+      return;
+    }
+
+    lastCompletedTransaction = trx;
+    closeModal();
+    openPaymentSuccessModal(trx);
+  } catch (err) {
+    console.error("Checkout error:", err);
+    alert("Terjadi kesalahan saat memproses pembayaran: " + (err.message || err));
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.innerText = 'Selesaikan Pembayaran';
+    }
+  }
 }
 
 // ==================== PAYMENT SUCCESS & PRINT OPTION MODAL ====================
@@ -441,9 +462,19 @@ function openPaymentSuccessModal(trx) {
 }
 
 // ==================== RECEIPT MODAL ====================
+function openReceiptModalById(trxId) {
+  const store = window.store;
+  const trx = store?.transactions?.find(t => t.id === trxId);
+  if (trx) {
+    openReceiptModal(trx);
+  }
+}
+
 function openReceiptModal(trx) {
+  if (!trx) return;
   lastCompletedTransaction = trx;
   const store = window.store;
+  currentReceiptWidth = store?.settings?.paperSize || '58mm';
   const container = document.getElementById('modal-container');
   if (!container) return;
 
@@ -586,9 +617,26 @@ function openReceiptModal(trx) {
   lucide.createIcons();
 }
 
+function preparePrintArea() {
+  const receiptEl = document.getElementById('printable-receipt');
+  let printArea = document.getElementById('pos-print-area');
+  if (!printArea) {
+    printArea = document.createElement('div');
+    printArea.id = 'pos-print-area';
+    document.body.appendChild(printArea);
+  }
+  if (receiptEl) {
+    printArea.innerHTML = receiptEl.innerHTML;
+    printArea.className = receiptEl.className;
+  }
+}
+
 function printReceipt() {
+  preparePrintArea();
   window.print();
 }
+
+window.addEventListener('beforeprint', preparePrintArea);
 
 function shareReceiptWhatsApp() {
   if (!lastCompletedTransaction) return;
