@@ -8,8 +8,17 @@ import os
 import sys
 import json
 import time
+import hmac
 import sqlite3
 import threading
+
+
+def to_rupiah(val):
+    """Normalize monetary value to exact integer Rupiah (no floating-point drift)."""
+    try:
+        return int(round(float(val or 0)))
+    except (ValueError, TypeError):
+        return 0
 
 # Add bundled pure-python libraries in lib/
 LIB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "lib")
@@ -276,8 +285,8 @@ class DatabaseEngine:
                 name TEXT NOT NULL,
                 barcode TEXT DEFAULT '',
                 category TEXT DEFAULT 'sembako',
-                costPrice REAL DEFAULT 0,
-                sellPrice REAL DEFAULT 0,
+                costPrice INTEGER DEFAULT 0,
+                sellPrice INTEGER DEFAULT 0,
                 stock INTEGER DEFAULT 0,
                 minStock INTEGER DEFAULT 5,
                 unit TEXT DEFAULT 'pcs',
@@ -291,15 +300,15 @@ class DatabaseEngine:
                 date TEXT NOT NULL,
                 cashier TEXT DEFAULT 'Kasir 1',
                 customerName TEXT DEFAULT 'Umum',
-                subtotal REAL DEFAULT 0,
-                discount REAL DEFAULT 0,
-                tax REAL DEFAULT 0,
-                total REAL DEFAULT 0,
-                totalCost REAL DEFAULT 0,
-                profit REAL DEFAULT 0,
+                subtotal INTEGER DEFAULT 0,
+                discount INTEGER DEFAULT 0,
+                tax INTEGER DEFAULT 0,
+                total INTEGER DEFAULT 0,
+                totalCost INTEGER DEFAULT 0,
+                profit INTEGER DEFAULT 0,
                 paymentMethod TEXT DEFAULT 'cash',
-                amountPaid REAL DEFAULT 0,
-                changeAmount REAL DEFAULT 0,
+                amountPaid INTEGER DEFAULT 0,
+                changeAmount INTEGER DEFAULT 0,
                 status TEXT DEFAULT 'completed',
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
@@ -311,9 +320,9 @@ class DatabaseEngine:
                 product_id TEXT DEFAULT '',
                 name TEXT NOT NULL,
                 qty INTEGER DEFAULT 1,
-                costPrice REAL DEFAULT 0,
-                sellPrice REAL DEFAULT 0,
-                subtotal REAL DEFAULT 0,
+                costPrice INTEGER DEFAULT 0,
+                sellPrice INTEGER DEFAULT 0,
+                subtotal INTEGER DEFAULT 0,
                 FOREIGN KEY (transaction_id) REFERENCES transactions(id) ON DELETE CASCADE
             );
             """)
@@ -323,7 +332,7 @@ class DatabaseEngine:
                 date TEXT NOT NULL,
                 category TEXT NOT NULL,
                 description TEXT,
-                amount REAL DEFAULT 0,
+                amount INTEGER DEFAULT 0,
                 recordedBy TEXT DEFAULT 'Admin',
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
@@ -347,9 +356,9 @@ class DatabaseEngine:
                 name TEXT NOT NULL,
                 code TEXT DEFAULT '',
                 type TEXT NOT NULL DEFAULT 'percentage',
-                value REAL NOT NULL DEFAULT 0,
-                minPurchase REAL DEFAULT 0,
-                maxDiscount REAL DEFAULT 0,
+                value INTEGER NOT NULL DEFAULT 0,
+                minPurchase INTEGER DEFAULT 0,
+                maxDiscount INTEGER DEFAULT 0,
                 isActive INTEGER DEFAULT 1,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
@@ -392,11 +401,58 @@ class DatabaseEngine:
             conn.close()
 
     # ==================== PUBLIC API METHODS ====================
-    def get_all(self):
+    def _get_raw_settings(self):
+        if self.driver_type == "mysql":
+            conn = self._get_mysql_connection()
+            try:
+                with conn.cursor() as cur:
+                    cur.execute("SELECT setting_key, setting_val FROM settings")
+                    rows = cur.fetchall()
+            finally:
+                conn.close()
+        else:
+            conn = self._get_sqlite_connection()
+            try:
+                cur = conn.cursor()
+                cur.execute("SELECT setting_key, setting_val FROM settings")
+                rows = [dict(r) for r in cur.fetchall()]
+            finally:
+                conn.close()
+
+        settings_map = {}
+        for row in rows:
+            try:
+                settings_map[row["setting_key"]] = json.loads(row["setting_val"])
+            except Exception:
+                settings_map[row["setting_key"]] = row["setting_val"]
+        return settings_map
+
+    def verify_credentials(self, role, secret):
+        with self.lock:
+            settings_map = self._get_raw_settings()
+            secret_str = str(secret or "").strip()
+            if role == "admin":
+                expected = str(settings_map.get("adminPassword", "admin123"))
+                return hmac.compare_digest(secret_str, expected)
+            elif role == "cashier":
+                expected_pin = str(settings_map.get("cashierPin", "1234"))
+                expected_admin = str(settings_map.get("adminPassword", "admin123"))
+                return hmac.compare_digest(secret_str, expected_pin) or hmac.compare_digest(secret_str, expected_admin)
+            return False
+
+    def get_all(self, include_secrets=False):
         with self.lock:
             if self.driver_type == "mysql":
-                return self._get_all_mysql()
-            return self._get_all_sqlite()
+                result = self._get_all_mysql()
+            else:
+                result = self._get_all_sqlite()
+
+            if not include_secrets and "settings" in result:
+                result["settings"] = dict(result["settings"])
+                result["settings"].pop("adminPassword", None)
+                result["settings"].pop("cashierPin", None)
+                result["settings"]["hasAuth"] = True
+            return result
 
     def _get_all_mysql(self):
         conn = self._get_mysql_connection()
@@ -418,6 +474,9 @@ class DatabaseEngine:
                 # Products
                 cur.execute("SELECT id, name, barcode, category, CAST(costPrice AS SIGNED) as costPrice, CAST(sellPrice AS SIGNED) as sellPrice, stock, minStock, unit, image FROM products ORDER BY id ASC")
                 products = cur.fetchall()
+                for p in products:
+                    p["costPrice"] = to_rupiah(p.get("costPrice", 0))
+                    p["sellPrice"] = to_rupiah(p.get("sellPrice", 0))
 
                 # Transactions
                 cur.execute("SELECT id, date, cashier, customerName, CAST(subtotal AS SIGNED) as subtotal, CAST(discount AS SIGNED) as discount, CAST(tax AS SIGNED) as tax, CAST(total AS SIGNED) as total, CAST(totalCost AS SIGNED) as totalCost, CAST(profit AS SIGNED) as profit, paymentMethod, CAST(amountPaid AS SIGNED) as amountPaid, CAST(changeAmount AS SIGNED) as `change`, status FROM transactions ORDER BY date DESC LIMIT 1000")
@@ -432,14 +491,27 @@ class DatabaseEngine:
                     if t_id not in items_by_trx:
                         items_by_trx[t_id] = []
                     item_clean = {k: v for k, v in item.items() if k != "transaction_id"}
+                    item_clean["costPrice"] = to_rupiah(item_clean.get("costPrice", 0))
+                    item_clean["sellPrice"] = to_rupiah(item_clean.get("sellPrice", 0))
+                    item_clean["subtotal"] = to_rupiah(item_clean.get("subtotal", 0))
                     items_by_trx[t_id].append(item_clean)
 
                 for trx in transactions:
+                    trx["subtotal"] = to_rupiah(trx.get("subtotal", 0))
+                    trx["discount"] = to_rupiah(trx.get("discount", 0))
+                    trx["tax"] = to_rupiah(trx.get("tax", 0))
+                    trx["total"] = to_rupiah(trx.get("total", 0))
+                    trx["totalCost"] = to_rupiah(trx.get("totalCost", 0))
+                    trx["profit"] = to_rupiah(trx.get("profit", 0))
+                    trx["amountPaid"] = to_rupiah(trx.get("amountPaid", 0))
+                    trx["change"] = to_rupiah(trx.get("change", 0))
                     trx["items"] = items_by_trx.get(trx["id"], [])
 
                 # Expenses
                 cur.execute("SELECT id, date, category, description, CAST(amount AS SIGNED) as amount, recordedBy FROM expenses ORDER BY date DESC LIMIT 500")
                 expenses = cur.fetchall()
+                for e in expenses:
+                    e["amount"] = to_rupiah(e.get("amount", 0))
 
                 # Stock History
                 cur.execute("SELECT id, date, productId, productName, type, qty, reason, user FROM stock_history ORDER BY date DESC LIMIT 500")
@@ -450,6 +522,9 @@ class DatabaseEngine:
                     cur.execute("SELECT id, name, code, type, CAST(value AS SIGNED) as value, CAST(minPurchase AS SIGNED) as minPurchase, CAST(maxDiscount AS SIGNED) as maxDiscount, isActive FROM discounts ORDER BY created_at DESC")
                     discounts = cur.fetchall()
                     for d in discounts:
+                        d["value"] = to_rupiah(d.get("value", 0))
+                        d["minPurchase"] = to_rupiah(d.get("minPurchase", 0))
+                        d["maxDiscount"] = to_rupiah(d.get("maxDiscount", 0))
                         d["isActive"] = bool(d["isActive"])
                 except Exception:
                     discounts = []
@@ -486,6 +561,9 @@ class DatabaseEngine:
             # Products
             cur.execute("SELECT id, name, barcode, category, costPrice, sellPrice, stock, minStock, unit, image FROM products ORDER BY id ASC")
             products = [dict(r) for r in cur.fetchall()]
+            for p in products:
+                p["costPrice"] = to_rupiah(p.get("costPrice", 0))
+                p["sellPrice"] = to_rupiah(p.get("sellPrice", 0))
 
             # Transactions
             cur.execute("SELECT id, date, cashier, customerName, subtotal, discount, tax, total, totalCost, profit, paymentMethod, amountPaid, changeAmount as `change`, status FROM transactions ORDER BY date DESC LIMIT 1000")
@@ -500,14 +578,27 @@ class DatabaseEngine:
                 if t_id not in items_by_trx:
                     items_by_trx[t_id] = []
                 item_clean = {k: v for k, v in item.items() if k != "transaction_id"}
+                item_clean["costPrice"] = to_rupiah(item_clean.get("costPrice", 0))
+                item_clean["sellPrice"] = to_rupiah(item_clean.get("sellPrice", 0))
+                item_clean["subtotal"] = to_rupiah(item_clean.get("subtotal", 0))
                 items_by_trx[t_id].append(item_clean)
 
             for trx in transactions:
+                trx["subtotal"] = to_rupiah(trx.get("subtotal", 0))
+                trx["discount"] = to_rupiah(trx.get("discount", 0))
+                trx["tax"] = to_rupiah(trx.get("tax", 0))
+                trx["total"] = to_rupiah(trx.get("total", 0))
+                trx["totalCost"] = to_rupiah(trx.get("totalCost", 0))
+                trx["profit"] = to_rupiah(trx.get("profit", 0))
+                trx["amountPaid"] = to_rupiah(trx.get("amountPaid", 0))
+                trx["change"] = to_rupiah(trx.get("change", 0))
                 trx["items"] = items_by_trx.get(trx["id"], [])
 
             # Expenses
             cur.execute("SELECT id, date, category, description, amount, recordedBy FROM expenses ORDER BY date DESC LIMIT 500")
             expenses = [dict(r) for r in cur.fetchall()]
+            for e in expenses:
+                e["amount"] = to_rupiah(e.get("amount", 0))
 
             # Stock History
             cur.execute("SELECT id, date, productId, productName, type, qty, reason, user FROM stock_history ORDER BY date DESC LIMIT 500")
@@ -518,6 +609,9 @@ class DatabaseEngine:
                 cur.execute("SELECT id, name, code, type, value, minPurchase, maxDiscount, isActive FROM discounts ORDER BY created_at DESC")
                 discounts = [dict(r) for r in cur.fetchall()]
                 for d in discounts:
+                    d["value"] = to_rupiah(d.get("value", 0))
+                    d["minPurchase"] = to_rupiah(d.get("minPurchase", 0))
+                    d["maxDiscount"] = to_rupiah(d.get("maxDiscount", 0))
                     d["isActive"] = bool(d["isActive"])
             except Exception:
                 discounts = []
@@ -534,103 +628,285 @@ class DatabaseEngine:
         finally:
             conn.close()
 
+    def _calculate_discount_amount(self, subtotal, trx, disc_row):
+        if disc_row:
+            is_active = bool(disc_row.get("isActive", 1))
+            min_purchase = to_rupiah(disc_row.get("minPurchase", 0))
+            if is_active and subtotal >= min_purchase:
+                disc_type = disc_row.get("type", "percentage")
+                val = float(disc_row.get("value", 0))
+                max_disc = to_rupiah(disc_row.get("maxDiscount", 0))
+                if disc_type == "percentage":
+                    calc = to_rupiah(subtotal * (val / 100.0))
+                    if max_disc > 0:
+                        calc = min(calc, max_disc)
+                else:
+                    calc = to_rupiah(val)
+                return min(max(0, calc), subtotal)
+            return 0
+        # Manual nominal discount fallback (clamped to [0, subtotal])
+        manual_disc = to_rupiah(trx.get("discount", 0))
+        return min(max(0, manual_disc), subtotal)
+
     def process_checkout(self, trx):
         with self.lock:
-            trx_id = trx.get("id")
+            trx_id = (trx.get("id") or "").strip() or f"TRX-{int(time.time()*1000)}"
+            trx["id"] = trx_id
             trx_date = trx.get("date") or time.strftime("%Y-%m-%dT%H:%M:%SZ")
             cashier = trx.get("cashier", "Kasir 1")
             customer_name = trx.get("customerName", "Umum")
-            subtotal = trx.get("subtotal", 0)
-            discount = trx.get("discount", 0)
-            tax = trx.get("tax", 0)
-            total = trx.get("total", 0)
-            total_cost = trx.get("totalCost", 0)
-            profit = trx.get("profit", 0)
             payment_method = trx.get("paymentMethod", "cash")
-            amount_paid = trx.get("amountPaid", total)
-            change_amount = trx.get("change", 0)
-            status = trx.get("status", "completed")
-            items = trx.get("items", [])
+            raw_items = trx.get("items", [])
+
+            if not raw_items or not isinstance(raw_items, list):
+                raise ValueError("Keranjang transaksi kosong.")
+
+            disc_info = trx.get("discountInfo") or {}
+            disc_id = disc_info.get("id") if isinstance(disc_info, dict) else None
+            disc_code = (disc_info.get("code") or "").strip().upper() if isinstance(disc_info, dict) else ""
 
             if self.driver_type == "mysql":
                 conn = self._get_mysql_connection()
                 try:
                     with conn.cursor() as cur:
+                        # 1. Idempotency Check: prevent double stock deduction on duplicate request
+                        cur.execute("SELECT id FROM transactions WHERE id = %s", (trx_id,))
+                        if cur.fetchone():
+                            return self.get_all()
+
+                        # 2. Server-side item validation & price calculation
+                        validated_items = []
+                        subtotal = 0
+                        total_cost = 0
+                        for item in raw_items:
+                            prod_id = item.get("id", "")
+                            qty = int(item.get("qty", 0))
+                            if qty <= 0:
+                                raise ValueError(f"Jumlah item tidak valid untuk produk {prod_id}.")
+                            cur.execute("SELECT id, name, costPrice, sellPrice, stock, unit FROM products WHERE id = %s FOR UPDATE", (prod_id,))
+                            prod = cur.fetchone()
+                            if not prod:
+                                raise ValueError(f"Produk dengan ID '{prod_id}' tidak ditemukan di database.")
+                            avail_stock = int(prod.get("stock", 0))
+                            if avail_stock < qty:
+                                raise ValueError(f"Stok '{prod['name']}' tidak mencukupi (tersedia: {avail_stock}, diminta: {qty}).")
+
+                            cost_p = to_rupiah(prod.get("costPrice", 0))
+                            sell_p = to_rupiah(prod.get("sellPrice", 0))
+                            sub_p = sell_p * qty
+                            subtotal += sub_p
+                            total_cost += cost_p * qty
+                            validated_items.append({
+                                "id": prod["id"],
+                                "name": prod["name"],
+                                "qty": qty,
+                                "costPrice": cost_p,
+                                "sellPrice": sell_p,
+                                "subtotal": sub_p,
+                                "unit": prod.get("unit", "pcs")
+                            })
+
+                        # 3. Server-side discount lookup
+                        disc_row = None
+                        if disc_id:
+                            cur.execute("SELECT * FROM discounts WHERE id = %s", (disc_id,))
+                            disc_row = cur.fetchone()
+                        elif disc_code:
+                            cur.execute("SELECT * FROM discounts WHERE UPPER(code) = %s", (disc_code,))
+                            disc_row = cur.fetchone()
+                        discount = self._calculate_discount_amount(subtotal, trx, disc_row)
+
+                        # 4. Server-side tax & total calculation
+                        cur.execute("SELECT setting_val FROM settings WHERE setting_key = 'taxRate'")
+                        tax_row = cur.fetchone()
+                        try:
+                            tax_rate = float(json.loads(tax_row["setting_val"])) if tax_row else 0.0
+                        except Exception:
+                            tax_rate = float(tax_row["setting_val"]) if tax_row else 0.0
+
+                        after_discount = max(0, subtotal - discount)
+                        tax = to_rupiah(after_discount * (max(0.0, tax_rate) / 100.0))
+                        total = after_discount + tax
+                        profit = after_discount - total_cost
+
+                        if payment_method == "cash":
+                            amount_paid = to_rupiah(trx.get("amountPaid", total))
+                            if amount_paid < total:
+                                raise ValueError(f"Nominal bayar tunai (Rp {amount_paid:,}) kurang dari total tagihan (Rp {total:,}).")
+                            change_amount = amount_paid - total
+                        else:
+                            amount_paid = total
+                            change_amount = 0
+
+                        status = "completed"
+
                         cur.execute("""
                         INSERT INTO transactions (id, date, cashier, customerName, subtotal, discount, tax, total, totalCost, profit, paymentMethod, amountPaid, changeAmount, status)
                         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                        ON DUPLICATE KEY UPDATE status=VALUES(status)
                         """, (trx_id, trx_date, cashier, customer_name, subtotal, discount, tax, total, total_cost, profit, payment_method, amount_paid, change_amount, status))
 
-                        for idx, item in enumerate(items):
-                            prod_id = item.get("id", "")
-                            qty = item.get("qty", 1)
-                            cost_p = item.get("costPrice", 0)
-                            sell_p = item.get("sellPrice", 0)
-                            sub_p = item.get("subtotal", sell_p * qty)
-                            item_name = item.get("name", "")
-
+                        for idx, v_item in enumerate(validated_items):
                             cur.execute("""
                             INSERT INTO transaction_items (transaction_id, product_id, name, qty, costPrice, sellPrice, subtotal)
                             VALUES (%s, %s, %s, %s, %s, %s, %s)
-                            """, (trx_id, prod_id, item_name, qty, cost_p, sell_p, sub_p))
+                            """, (trx_id, v_item["id"], v_item["name"], v_item["qty"], v_item["costPrice"], v_item["sellPrice"], v_item["subtotal"]))
 
-                            # Deduct stock
-                            cur.execute("UPDATE products SET stock = GREATEST(0, stock - %s) WHERE id = %s", (qty, prod_id))
+                            cur.execute("UPDATE products SET stock = GREATEST(0, stock - %s) WHERE id = %s", (v_item["qty"], v_item["id"]))
 
-                            # Record Stock Mutation
                             stk_id = f"STK-{int(time.time()*1000)}-{idx}"
                             cur.execute("""
                             INSERT INTO stock_history (id, date, productId, productName, type, qty, reason, user)
                             VALUES (%s, %s, %s, %s, 'out', %s, %s, %s)
                             ON DUPLICATE KEY UPDATE qty=VALUES(qty)
-                            """, (stk_id, trx_date, prod_id, item_name, qty, f"Penjualan #{trx_id}", cashier))
+                            """, (stk_id, trx_date, v_item["id"], v_item["name"], v_item["qty"], f"Penjualan #{trx_id}", cashier))
+
+                        trx.update({
+                            "date": trx_date,
+                            "subtotal": subtotal,
+                            "discount": discount,
+                            "tax": tax,
+                            "total": total,
+                            "totalCost": total_cost,
+                            "profit": profit,
+                            "amountPaid": amount_paid,
+                            "change": change_amount,
+                            "status": status,
+                            "items": validated_items
+                        })
                 finally:
                     conn.close()
             else:
                 conn = self._get_sqlite_connection()
                 try:
                     cur = conn.cursor()
+                    # 1. Idempotency Check: prevent double stock deduction on duplicate request
+                    cur.execute("SELECT id FROM transactions WHERE id = ?", (trx_id,))
+                    if cur.fetchone():
+                        return self.get_all()
+
+                    # 2. Server-side item validation & price calculation
+                    validated_items = []
+                    subtotal = 0
+                    total_cost = 0
+                    for item in raw_items:
+                        prod_id = item.get("id", "")
+                        qty = int(item.get("qty", 0))
+                        if qty <= 0:
+                            raise ValueError(f"Jumlah item tidak valid untuk produk {prod_id}.")
+                        cur.execute("SELECT id, name, costPrice, sellPrice, stock, unit FROM products WHERE id = ?", (prod_id,))
+                        row = cur.fetchone()
+                        if not row:
+                            raise ValueError(f"Produk dengan ID '{prod_id}' tidak ditemukan di database.")
+                        prod = dict(row)
+                        avail_stock = int(prod.get("stock", 0))
+                        if avail_stock < qty:
+                            raise ValueError(f"Stok '{prod['name']}' tidak mencukupi (tersedia: {avail_stock}, diminta: {qty}).")
+
+                        cost_p = to_rupiah(prod.get("costPrice", 0))
+                        sell_p = to_rupiah(prod.get("sellPrice", 0))
+                        sub_p = sell_p * qty
+                        subtotal += sub_p
+                        total_cost += cost_p * qty
+                        validated_items.append({
+                            "id": prod["id"],
+                            "name": prod["name"],
+                            "qty": qty,
+                            "costPrice": cost_p,
+                            "sellPrice": sell_p,
+                            "subtotal": sub_p,
+                            "unit": prod.get("unit", "pcs")
+                        })
+
+                    # 3. Server-side discount lookup
+                    disc_row = None
+                    if disc_id:
+                        cur.execute("SELECT * FROM discounts WHERE id = ?", (disc_id,))
+                        r = cur.fetchone()
+                        disc_row = dict(r) if r else None
+                    elif disc_code:
+                        cur.execute("SELECT * FROM discounts WHERE UPPER(code) = ?", (disc_code,))
+                        r = cur.fetchone()
+                        disc_row = dict(r) if r else None
+                    discount = self._calculate_discount_amount(subtotal, trx, disc_row)
+
+                    # 4. Server-side tax & total calculation
+                    cur.execute("SELECT setting_val FROM settings WHERE setting_key = 'taxRate'")
+                    tax_row = cur.fetchone()
+                    try:
+                        tax_rate = float(json.loads(tax_row["setting_val"])) if tax_row else 0.0
+                    except Exception:
+                        tax_rate = float(tax_row["setting_val"]) if tax_row else 0.0
+
+                    after_discount = max(0, subtotal - discount)
+                    tax = to_rupiah(after_discount * (max(0.0, tax_rate) / 100.0))
+                    total = after_discount + tax
+                    profit = after_discount - total_cost
+
+                    if payment_method == "cash":
+                        amount_paid = to_rupiah(trx.get("amountPaid", total))
+                        if amount_paid < total:
+                            raise ValueError(f"Nominal bayar tunai (Rp {amount_paid:,}) kurang dari total tagihan (Rp {total:,}).")
+                        change_amount = amount_paid - total
+                    else:
+                        amount_paid = total
+                        change_amount = 0
+
+                    status = "completed"
+
                     cur.execute("""
-                    INSERT OR REPLACE INTO transactions (id, date, cashier, customerName, subtotal, discount, tax, total, totalCost, profit, paymentMethod, amountPaid, changeAmount, status)
+                    INSERT INTO transactions (id, date, cashier, customerName, subtotal, discount, tax, total, totalCost, profit, paymentMethod, amountPaid, changeAmount, status)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, (trx_id, trx_date, cashier, customer_name, subtotal, discount, tax, total, total_cost, profit, payment_method, amount_paid, change_amount, status))
 
-                    for idx, item in enumerate(items):
-                        prod_id = item.get("id", "")
-                        qty = item.get("qty", 1)
-                        cost_p = item.get("costPrice", 0)
-                        sell_p = item.get("sellPrice", 0)
-                        sub_p = item.get("subtotal", sell_p * qty)
-                        item_name = item.get("name", "")
-
+                    for idx, v_item in enumerate(validated_items):
                         cur.execute("""
                         INSERT INTO transaction_items (transaction_id, product_id, name, qty, costPrice, sellPrice, subtotal)
                         VALUES (?, ?, ?, ?, ?, ?, ?)
-                        """, (trx_id, prod_id, item_name, qty, cost_p, sell_p, sub_p))
+                        """, (trx_id, v_item["id"], v_item["name"], v_item["qty"], v_item["costPrice"], v_item["sellPrice"], v_item["subtotal"]))
 
-                        # Deduct stock
-                        cur.execute("UPDATE products SET stock = MAX(0, stock - ?) WHERE id = ?", (qty, prod_id))
+                        cur.execute("UPDATE products SET stock = MAX(0, stock - ?) WHERE id = ?", (v_item["qty"], v_item["id"]))
 
-                        # Record Stock Mutation
                         stk_id = f"STK-{int(time.time()*1000)}-{idx}"
                         cur.execute("""
                         INSERT OR REPLACE INTO stock_history (id, date, productId, productName, type, qty, reason, user)
                         VALUES (?, ?, ?, ?, 'out', ?, ?, ?)
-                        """, (stk_id, trx_date, prod_id, item_name, qty, f"Penjualan #{trx_id}", cashier))
+                        """, (stk_id, trx_date, v_item["id"], v_item["name"], v_item["qty"], f"Penjualan #{trx_id}", cashier))
+
                     conn.commit()
+                    trx.update({
+                        "date": trx_date,
+                        "subtotal": subtotal,
+                        "discount": discount,
+                        "tax": tax,
+                        "total": total,
+                        "totalCost": total_cost,
+                        "profit": profit,
+                        "amountPaid": amount_paid,
+                        "change": change_amount,
+                        "status": status,
+                        "items": validated_items
+                    })
+                except Exception:
+                    conn.rollback()
+                    raise
                 finally:
                     conn.close()
 
             return self.get_all()
 
-    def delete_transaction(self, trx_id):
+    def void_transaction(self, trx_id, reason="Dibatalkan oleh Admin", user="Admin"):
         with self.lock:
             date_str = time.strftime("%Y-%m-%dT%H:%M:%SZ")
+            clean_reason = (reason or "Dibatalkan oleh Admin").strip()
             if self.driver_type == "mysql":
                 conn = self._get_mysql_connection()
                 try:
                     with conn.cursor() as cur:
+                        cur.execute("SELECT id, status FROM transactions WHERE id = %s FOR UPDATE", (trx_id,))
+                        trx_row = cur.fetchone()
+                        if not trx_row or trx_row.get("status") == "void":
+                            return self.get_all()
+
                         cur.execute("SELECT product_id, name, qty FROM transaction_items WHERE transaction_id = %s", (trx_id,))
                         items = cur.fetchall()
                         for idx, item in enumerate(items):
@@ -642,17 +918,21 @@ class DatabaseEngine:
                                 stk_id = f"STK-{int(time.time()*1000)}-VOID-{idx}"
                                 cur.execute("""
                                 INSERT INTO stock_history (id, date, productId, productName, type, qty, reason, user)
-                                VALUES (%s, %s, %s, %s, 'in', %s, %s, 'Admin')
+                                VALUES (%s, %s, %s, %s, 'in', %s, %s, %s)
                                 ON DUPLICATE KEY UPDATE qty=VALUES(qty)
-                                """, (stk_id, date_str, prod_id, item_name, qty, f"Pembatalan Nota #{trx_id}"))
-                        cur.execute("DELETE FROM transaction_items WHERE transaction_id = %s", (trx_id,))
-                        cur.execute("DELETE FROM transactions WHERE id = %s", (trx_id,))
+                                """, (stk_id, date_str, prod_id, item_name, qty, f"Void Nota #{trx_id}: {clean_reason}", user))
+                        cur.execute("UPDATE transactions SET status = 'void' WHERE id = %s", (trx_id,))
                 finally:
                     conn.close()
             else:
                 conn = self._get_sqlite_connection()
                 try:
                     cur = conn.cursor()
+                    cur.execute("SELECT id, status FROM transactions WHERE id = ?", (trx_id,))
+                    trx_row = cur.fetchone()
+                    if not trx_row or trx_row["status"] == "void":
+                        return self.get_all()
+
                     cur.execute("SELECT product_id, name, qty FROM transaction_items WHERE transaction_id = ?", (trx_id,))
                     items = [dict(r) for r in cur.fetchall()]
                     for idx, item in enumerate(items):
@@ -664,14 +944,19 @@ class DatabaseEngine:
                             stk_id = f"STK-{int(time.time()*1000)}-VOID-{idx}"
                             cur.execute("""
                             INSERT OR REPLACE INTO stock_history (id, date, productId, productName, type, qty, reason, user)
-                            VALUES (?, ?, ?, ?, 'in', ?, ?, 'Admin')
-                            """, (stk_id, date_str, prod_id, item_name, qty, f"Pembatalan Nota #{trx_id}"))
-                    cur.execute("DELETE FROM transaction_items WHERE transaction_id = ?", (trx_id,))
-                    cur.execute("DELETE FROM transactions WHERE id = ?", (trx_id,))
+                            VALUES (?, ?, ?, ?, 'in', ?, ?, ?)
+                            """, (stk_id, date_str, prod_id, item_name, qty, f"Void Nota #{trx_id}: {clean_reason}", user))
+                    cur.execute("UPDATE transactions SET status = 'void' WHERE id = ?", (trx_id,))
                     conn.commit()
+                except Exception:
+                    conn.rollback()
+                    raise
                 finally:
                     conn.close()
             return self.get_all()
+
+    def delete_transaction(self, trx_id, reason="Dibatalkan oleh Admin", user="Admin"):
+        return self.void_transaction(trx_id, reason=reason, user=user)
 
     def save_product(self, product):
         with self.lock:
@@ -683,10 +968,10 @@ class DatabaseEngine:
             name = product.get("name", "")
             barcode = product.get("barcode", "")
             category = product.get("category", "sembako")
-            cost_price = product.get("costPrice", 0)
-            sell_price = product.get("sellPrice", 0)
-            stock = product.get("stock", 0)
-            min_stock = product.get("minStock", 5)
+            cost_price = to_rupiah(product.get("costPrice", 0))
+            sell_price = to_rupiah(product.get("sellPrice", 0))
+            stock = int(product.get("stock", 0))
+            min_stock = int(product.get("minStock", 5))
             unit = product.get("unit", "pcs")
             image = product.get("image", "")
 
@@ -767,7 +1052,7 @@ class DatabaseEngine:
 
                             if mutation_type == "in" and record_expense:
                                 exp_id = f"EXP-{str(int(time.time()*1000))[-6:]}"
-                                cost = float(prod.get("costPrice", 0)) * qty
+                                cost = to_rupiah(prod.get("costPrice", 0)) * qty
                                 cur.execute("""
                                 INSERT INTO expenses (id, date, category, description, amount, recordedBy)
                                 VALUES (%s, %s, 'Stok Barang', %s, %s, %s)
@@ -782,7 +1067,7 @@ class DatabaseEngine:
                     row = cur.fetchone()
                     if row:
                         prod_name = row["name"]
-                        cost_p = row["costPrice"]
+                        cost_p = to_rupiah(row["costPrice"])
                         unit = row["unit"]
 
                         if mutation_type == "in":
@@ -815,7 +1100,7 @@ class DatabaseEngine:
             exp_date = expense.get("date") or time.strftime("%Y-%m-%dT%H:%M:%SZ")
             cat = expense.get("category", "Operasional")
             desc = expense.get("description", "")
-            amount = expense.get("amount", 0)
+            amount = to_rupiah(expense.get("amount", 0))
             user = expense.get("recordedBy", "Admin")
 
             if self.driver_type == "mysql":
@@ -863,11 +1148,19 @@ class DatabaseEngine:
 
     def update_settings(self, new_settings):
         with self.lock:
+            filtered_settings = {}
+            for k, v in (new_settings or {}).items():
+                if k == "hasAuth":
+                    continue
+                if k in ("adminPassword", "cashierPin") and (v is None or str(v).strip() == ""):
+                    continue
+                filtered_settings[k] = v
+
             if self.driver_type == "mysql":
                 conn = self._get_mysql_connection()
                 try:
                     with conn.cursor() as cur:
-                        for k, v in new_settings.items():
+                        for k, v in filtered_settings.items():
                             cur.execute("""
                             INSERT INTO settings (setting_key, setting_val)
                             VALUES (%s, %s)
@@ -879,7 +1172,7 @@ class DatabaseEngine:
                 conn = self._get_sqlite_connection()
                 try:
                     cur = conn.cursor()
-                    for k, v in new_settings.items():
+                    for k, v in filtered_settings.items():
                         cur.execute("""
                         INSERT OR REPLACE INTO settings (setting_key, setting_val)
                         VALUES (?, ?)
@@ -899,9 +1192,9 @@ class DatabaseEngine:
             name = discount_data.get("name", "")
             code = (discount_data.get("code") or "").strip().upper()
             disc_type = discount_data.get("type", "percentage")
-            value = float(discount_data.get("value", 0))
-            min_purchase = float(discount_data.get("minPurchase", 0))
-            max_discount = float(discount_data.get("maxDiscount", 0))
+            value = to_rupiah(discount_data.get("value", 0))
+            min_purchase = to_rupiah(discount_data.get("minPurchase", 0))
+            max_discount = to_rupiah(discount_data.get("maxDiscount", 0))
             is_active = 1 if discount_data.get("isActive", True) else 0
 
             if self.driver_type == "mysql":

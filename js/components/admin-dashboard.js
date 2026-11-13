@@ -9,20 +9,23 @@ function renderAdminDashboard() {
   const now = new Date();
   const todayDateStr = getLocalDateKey(now);
 
+  // Active (non-void) transactions for financial & sales KPIs
+  const validTransactions = store.transactions.filter(t => t.status !== 'void');
+
   // Transactions metrics
-  const totalRevenue = store.transactions.reduce((acc, t) => acc + Number(t.total || 0), 0);
-  const totalGrossProfit = store.transactions.reduce((acc, t) => {
+  const totalRevenue = validTransactions.reduce((acc, t) => acc + Number(t.total || 0), 0);
+  const totalGrossProfit = validTransactions.reduce((acc, t) => {
     const netSale = Number(t.subtotal || t.total || 0) - Number(t.discount || 0);
     const cost = Number(t.totalCost || 0);
     return acc + (t.profit !== undefined ? Number(t.profit) : (netSale - cost));
   }, 0);
   const totalExpenses = store.expenses.reduce((acc, e) => acc + Number(e.amount || 0), 0);
   const netProfit = totalGrossProfit - totalExpenses;
-  const totalTransactions = store.transactions.length;
-  const totalItemsSold = store.transactions.reduce((acc, t) => acc + (t.items || []).reduce((sum, i) => sum + Number(i.qty || 0), 0), 0);
+  const totalTransactions = validTransactions.length;
+  const totalItemsSold = validTransactions.reduce((acc, t) => acc + (t.items || []).reduce((sum, i) => sum + Number(i.qty || 0), 0), 0);
 
   // Today's metrics (local timezone)
-  const todayTransactions = store.transactions.filter(t => getLocalDateKey(t.date) === todayDateStr);
+  const todayTransactions = validTransactions.filter(t => getLocalDateKey(t.date) === todayDateStr);
   const todayRevenue = todayTransactions.reduce((acc, t) => acc + Number(t.total || 0), 0);
   const todayExpenses = store.expenses.filter(e => getLocalDateKey(e.date) === todayDateStr).reduce((acc, e) => acc + Number(e.amount || 0), 0);
   const todayGrossProfit = todayTransactions.reduce((acc, t) => {
@@ -37,8 +40,8 @@ function renderAdminDashboard() {
 
   // Top selling products calculation
   const productSalesMap = {};
-  store.transactions.forEach(t => {
-    t.items.forEach(i => {
+  validTransactions.forEach(t => {
+    (t.items || []).forEach(i => {
       if (!productSalesMap[i.id]) {
         productSalesMap[i.id] = { name: i.name, qty: 0, revenue: 0 };
       }
@@ -258,7 +261,7 @@ function initSalesChart() {
     const label = d.toLocaleDateString('id-ID', { weekday: 'short', day: 'numeric' });
     labels.push(label);
 
-    const dayTrxs = store.transactions.filter(t => getLocalDateKey(t.date) === dateStr);
+    const dayTrxs = store.transactions.filter(t => t.status !== 'void' && getLocalDateKey(t.date) === dateStr);
     const dayRev = dayTrxs.reduce((sum, t) => sum + Number(t.total || 0), 0);
     const dayProf = dayTrxs.reduce((sum, t) => sum + Number(t.profit || 0), 0);
 

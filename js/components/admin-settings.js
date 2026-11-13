@@ -194,27 +194,29 @@ function renderAdminSettings() {
             </div>
 
             <div>
-              <label class="block font-semibold text-slate-600 dark:text-slate-300 mb-1">Password Admin *</label>
+              <label class="block font-semibold text-slate-600 dark:text-slate-300 mb-1">Password Admin Baru</label>
               <input 
-                type="text" 
+                type="password" 
                 name="adminPassword" 
-                required 
-                value="${escapeHtml(s.adminPassword)}"
+                value=""
+                placeholder="Kosongkan jika tidak diubah"
+                autocomplete="new-password"
                 class="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-800 dark:text-white font-mono font-bold focus:outline-none"
               />
-              <p class="text-[10px] text-slate-400 mt-1">Digunakan untuk masuk ke panel manajemen & keuangan</p>
+              <p class="text-[10px] text-slate-400 mt-1">Disimpan terenkripsi/terproteksi di server (tidak diekspos ke publik)</p>
             </div>
 
             <div>
-              <label class="block font-semibold text-slate-600 dark:text-slate-300 mb-1">PIN Kasir *</label>
+              <label class="block font-semibold text-slate-600 dark:text-slate-300 mb-1">PIN Kasir Baru</label>
               <input 
-                type="text" 
+                type="password" 
                 name="cashierPin" 
-                required 
-                value="${escapeHtml(s.cashierPin)}"
+                value=""
+                placeholder="Kosongkan jika tidak diubah"
+                autocomplete="new-password"
                 class="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-800 dark:text-white font-mono font-bold focus:outline-none"
               />
-              <p class="text-[10px] text-slate-400 mt-1">Digunakan saat berpindah ke mode kasir</p>
+              <p class="text-[10px] text-slate-400 mt-1">Digunakan saat login atau berpindah ke mode kasir</p>
             </div>
           </div>
         </div>

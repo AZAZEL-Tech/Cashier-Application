@@ -764,36 +764,22 @@ function openRoleSwitchModal() {
   lucide.createIcons();
 }
 
-function submitRoleSwitch(targetRole) {
+async function submitRoleSwitch(targetRole) {
   const store = window.store;
   const input = document.getElementById('role-auth-input');
   if (!input) return;
   const val = input.value.trim();
 
-  if (targetRole === 'admin') {
-    const expectedPass = String(store.settings.adminPassword || 'admin');
-    if (val === expectedPass) {
-      store.setRole('admin');
-      closeModal();
-      window.navigate('admin-dashboard');
-    } else {
-      if (store.settings.soundEnabled && typeof soundFx !== 'undefined') soundFx.playError();
-      alert('Password admin salah!');
-    }
+  const nameInput = document.getElementById('role-cashier-name-input');
+  const cashierName = (nameInput && nameInput.value.trim()) ? nameInput.value.trim() : store.cashierName;
+
+  const res = await store.login(targetRole, val, cashierName);
+  if (res.success) {
+    closeModal();
+    window.navigate(targetRole === 'admin' ? 'admin-dashboard' : 'pos');
   } else {
-    const expectedPin = String(store.settings.cashierPin || '1234');
-    if (val === expectedPin) {
-      const nameInput = document.getElementById('role-cashier-name-input');
-      if (nameInput && nameInput.value.trim()) {
-        store.setCashierName(nameInput.value.trim());
-      }
-      store.setRole('cashier');
-      closeModal();
-      window.navigate('pos');
-    } else {
-      if (store.settings.soundEnabled && typeof soundFx !== 'undefined') soundFx.playError();
-      alert('PIN kasir salah!');
-    }
+    if (store.settings.soundEnabled && typeof soundFx !== 'undefined') soundFx.playError();
+    alert(res.message || (targetRole === 'admin' ? 'Password admin salah!' : 'PIN kasir salah!'));
   }
 }
 

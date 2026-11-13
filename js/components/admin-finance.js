@@ -7,10 +7,11 @@ let expenseCategoryFilter = 'all';
 function renderAdminFinance() {
   const store = window.store;
 
-  // Calculate financials consistently with Dashboard
-  const totalRevenue = store.transactions.reduce((acc, t) => acc + Number(t.total || 0), 0);
-  const totalCostOfGoods = store.transactions.reduce((acc, t) => acc + Number(t.totalCost || 0), 0);
-  const grossProfit = store.transactions.reduce((acc, t) => {
+  // Calculate financials consistently with Dashboard (excluding voided transactions)
+  const validTransactions = store.transactions.filter(t => t.status !== 'void');
+  const totalRevenue = validTransactions.reduce((acc, t) => acc + Number(t.total || 0), 0);
+  const totalCostOfGoods = validTransactions.reduce((acc, t) => acc + Number(t.totalCost || 0), 0);
+  const grossProfit = validTransactions.reduce((acc, t) => {
     const netSale = Number(t.subtotal || t.total || 0) - Number(t.discount || 0);
     const cost = Number(t.totalCost || 0);
     return acc + (t.profit !== undefined ? Number(t.profit) : (netSale - cost));
@@ -57,7 +58,7 @@ function renderAdminFinance() {
           <div class="pt-2 sm:pt-0 sm:pr-4">
             <span class="text-xs font-semibold text-slate-400 block mb-1">(+) Total Penjualan (Omset)</span>
             <span class="text-xl font-extrabold text-slate-900 dark:text-white">${formatRupiah(totalRevenue)}</span>
-            <span class="text-[11px] text-slate-400 block mt-1">Dari ${store.transactions.length} transaksi</span>
+            <span class="text-[11px] text-slate-400 block mt-1">Dari ${validTransactions.length} transaksi aktif</span>
           </div>
 
           <div class="pt-3 sm:pt-0 sm:px-4">

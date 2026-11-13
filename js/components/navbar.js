@@ -92,6 +92,11 @@ function renderNavbar() {
               <span class="hidden sm:inline">Ganti ke ${isCashier ? 'Admin' : 'Kasir POS'}</span>
               <span class="sm:hidden">${isCashier ? 'Admin' : 'Kasir'}</span>
             </button>
+
+            <!-- Logout Button -->
+            <button onclick="window.store.logout()" title="Keluar Sesi (Logout)" class="p-2 rounded-xl text-rose-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition">
+              <i data-lucide="log-out" class="w-4 h-4"></i>
+            </button>
           </div>
 
         </div>

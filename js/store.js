@@ -6,6 +6,8 @@
 
 class AppStore {
   constructor() {
+    this.authToken = localStorage.getItem('pos_auth_token') || null;
+    this.isAuthenticated = Boolean(this.authToken);
     this.currentRole = localStorage.getItem('pos_role') || 'cashier'; // 'cashier' | 'admin'
     this.cashierName = localStorage.getItem('pos_cashier_name') || 'Kasir 1';
     this.isDark = localStorage.getItem('pos_theme') === 'dark';
@@ -33,8 +35,111 @@ class AppStore {
     // Apply dark mode on init
     this.applyTheme();
 
-    // Start Realtime Connection to Server
-    this.initRealtimeConnection();
+    // Start Realtime Connection to Server if authenticated
+    if (this.isAuthenticated) {
+      this.verifySessionAndConnect();
+    }
+  }
+
+  async apiFetch(url, options = {}) {
+    const headers = { ...(options.headers || {}) };
+    if (this.authToken) {
+      headers['Authorization'] = `Bearer ${this.authToken}`;
+    }
+    const res = await fetch(url, { ...options, headers });
+    if (res.status === 401 && !url.includes('/api/auth/login')) {
+      this.clearAuthSession();
+    }
+    return res;
+  }
+
+  async verifySessionAndConnect() {
+    try {
+      const res = await this.apiFetch('/api/auth/session');
+      if (res.ok) {
+        const sess = await res.json();
+        this.currentRole = sess.role || this.currentRole;
+        this.cashierName = sess.cashierName || this.cashierName;
+        this.isAuthenticated = true;
+        this.initRealtimeConnection();
+        this.notify();
+      } else if (res.status === 401) {
+        this.clearAuthSession();
+      }
+    } catch (e) {
+      // Offline fallback: allow cached session until server comes back
+      this.initRealtimeConnection();
+    }
+  }
+
+  async login(role, secret, cashierName = '') {
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          role,
+          password: secret,
+          cashierName: cashierName || this.cashierName
+        })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.success) {
+        return {
+          success: false,
+          message: data.error || 'Autentikasi gagal. Periksa kembali PIN / Password Anda.'
+        };
+      }
+
+      this.authToken = data.token;
+      this.isAuthenticated = true;
+      this.currentRole = data.role;
+      this.cashierName = data.cashierName || cashierName || (data.role === 'admin' ? 'Admin' : 'Kasir 1');
+
+      localStorage.setItem('pos_auth_token', this.authToken);
+      localStorage.setItem('pos_role', this.currentRole);
+      localStorage.setItem('pos_cashier_name', this.cashierName);
+
+      if (data.data) {
+        this.applyServerState(data.data);
+      }
+
+      this.initRealtimeConnection();
+      this.notify();
+      return { success: true, role: this.currentRole, cashierName: this.cashierName };
+    } catch (e) {
+      return {
+        success: false,
+        message: 'Tidak dapat terhubung ke server autentikasi: ' + e.message
+      };
+    }
+  }
+
+  async logout() {
+    try {
+      if (this.authToken) {
+        await this.apiFetch('/api/auth/logout', { method: 'POST' });
+      }
+    } catch (e) {
+      // ignore network error on logout
+    }
+    this.clearAuthSession();
+  }
+
+  clearAuthSession() {
+    this.authToken = null;
+    this.isAuthenticated = false;
+    this.isLiveConnected = false;
+    localStorage.removeItem('pos_auth_token');
+    if (this.eventSource) {
+      try { this.eventSource.close(); } catch (e) {}
+      this.eventSource = null;
+    }
+    if (this._pollInterval) {
+      clearInterval(this._pollInterval);
+      this._pollInterval = null;
+    }
+    this.notify();
   }
 
   loadData(key, fallback) {
@@ -68,6 +173,13 @@ class AppStore {
 
   // ==================== REALTIME SSE ENGINE ====================
   initRealtimeConnection() {
+    if (!this.authToken) return;
+
+    if (this.eventSource) {
+      try { this.eventSource.close(); } catch (e) {}
+      this.eventSource = null;
+    }
+
     if (typeof EventSource === 'undefined') {
       console.warn("Browser does not support SSE. Falling back to polling.");
       this.startPollingFallback();
@@ -75,7 +187,7 @@ class AppStore {
     }
 
     try {
-      this.eventSource = new EventSource('/api/events');
+      this.eventSource = new EventSource(`/api/events?token=${encodeURIComponent(this.authToken)}`);
 
       this.eventSource.onopen = () => {
         this.isLiveConnected = true;
@@ -103,14 +215,16 @@ class AppStore {
   }
 
   startPollingFallback() {
-    setInterval(() => {
-      this.fetchServerData();
+    if (this._pollInterval) clearInterval(this._pollInterval);
+    this._pollInterval = setInterval(() => {
+      if (this.authToken) this.fetchServerData();
     }, 4000);
   }
 
   async fetchServerData() {
+    if (!this.authToken) return;
     try {
-      const res = await fetch('/api/data');
+      const res = await this.apiFetch('/api/data');
       if (res.ok) {
         const fullData = await res.json();
         this.applyServerState(fullData);
@@ -501,6 +615,7 @@ class AppStore {
       items: JSON.parse(JSON.stringify(this.cart)),
       subtotal: calc.subtotal,
       discount: calc.discount,
+      discountInfo: this.activeDiscountInfo,
       tax: calc.tax,
       total: calc.total,
       totalCost: calc.totalCost,
@@ -511,31 +626,43 @@ class AppStore {
       status: 'completed'
     };
 
-    // Optimistically deduct local stock
-    this.cart.forEach(item => {
-      const prod = this.products.find(p => p.id === item.id);
-      if (prod) {
-        prod.stock = Math.max(0, prod.stock - item.qty);
-      }
-    });
-
-    this.transactions.unshift(newTransaction);
-    this.saveData('pos_products', this.products);
-    this.saveData('pos_transactions', this.transactions);
-    this.clearCart();
-
-    // Broadcast to Server via REST API
+    // Broadcast to Server via authenticated REST API first so server validates stock & prices
     try {
-      const res = await fetch('/api/checkout', {
+      const res = await this.apiFetch('/api/checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newTransaction)
       });
-      if (res.ok) {
-        // Server will also broadcast SSE, state is synced
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        if (this.settings.soundEnabled && typeof soundFx !== 'undefined') {
+          soundFx.playError();
+        }
+        alert(errJson.error || 'Gagal memproses transaksi di server.');
+        await this.fetchServerData();
+        return null;
       }
+      const resJson = await res.json();
+      if (resJson.transaction) {
+        Object.assign(newTransaction, resJson.transaction);
+      }
+      if (resJson.data) {
+        this.applyServerState(resJson.data);
+      }
+      this.clearCart();
     } catch (e) {
       console.warn("Offline checkout mode:", e);
+      // Offline fallback: optimistically deduct local stock
+      this.cart.forEach(item => {
+        const prod = this.products.find(p => p.id === item.id);
+        if (prod) {
+          prod.stock = Math.max(0, prod.stock - item.qty);
+        }
+      });
+      this.transactions.unshift(newTransaction);
+      this.saveData('pos_products', this.products);
+      this.saveData('pos_transactions', this.transactions);
+      this.clearCart();
     }
 
     if (this.settings.soundEnabled && typeof soundFx !== 'undefined') {
@@ -546,31 +673,39 @@ class AppStore {
     return newTransaction;
   }
 
-  async deleteTransaction(trxId) {
-    // Optimistically restore stock & remove locally
+  async voidTransaction(trxId, reason = 'Dibatalkan oleh Admin') {
     const trx = this.transactions.find(t => t.id === trxId);
-    if (trx && Array.isArray(trx.items)) {
+    if (!trx || trx.status === 'void') return;
+
+    // Optimistically mark status as void & restore stock locally
+    trx.status = 'void';
+    if (Array.isArray(trx.items)) {
       trx.items.forEach(item => {
         const prod = this.products.find(p => p.id === item.id);
         if (prod) prod.stock = Number(prod.stock || 0) + Number(item.qty || 0);
       });
     }
-    this.transactions = this.transactions.filter(t => t.id !== trxId);
     this.saveData('pos_products', this.products);
     this.saveData('pos_transactions', this.transactions);
 
     try {
-      const res = await fetch(`/api/transactions?id=${encodeURIComponent(trxId)}`, {
-        method: 'DELETE'
+      const res = await this.apiFetch('/api/transactions/void', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: trxId, reason })
       });
       if (res.ok) {
         const json = await res.json();
         if (json.data) this.applyServerState(json.data);
       }
     } catch (e) {
-      console.warn("Offline transaction delete:", e);
+      console.warn("Offline transaction void:", e);
     }
     this.notify();
+  }
+
+  async deleteTransaction(trxId, reason = 'Dibatalkan oleh Admin') {
+    return this.voidTransaction(trxId, reason);
   }
 
   // ==================== PRODUCT CRUD (SYNCED) ====================
@@ -582,8 +717,8 @@ class AppStore {
       name: productData.name,
       barcode: productData.barcode || String(Math.floor(10000000 + Math.random() * 90000000)),
       category: productData.category || 'lainnya',
-      costPrice: Number(productData.costPrice) || 0,
-      sellPrice: Number(productData.sellPrice) || 0,
+      costPrice: Math.round(Number(productData.costPrice) || 0),
+      sellPrice: Math.round(Number(productData.sellPrice) || 0),
       stock: Number(productData.stock) || 0,
       minStock: Number(productData.minStock) || 5,
       unit: productData.unit || 'pcs',
@@ -601,7 +736,7 @@ class AppStore {
     this.notify();
 
     try {
-      const res = await fetch('/api/products', {
+      const res = await this.apiFetch('/api/products', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(finalProduct)
@@ -624,7 +759,7 @@ class AppStore {
     this.notify();
 
     try {
-      const res = await fetch(`/api/products?id=${encodeURIComponent(productId)}`, {
+      const res = await this.apiFetch(`/api/products?id=${encodeURIComponent(productId)}`, {
         method: 'DELETE'
       });
       if (res.ok) {
@@ -658,7 +793,7 @@ class AppStore {
     this.notify();
 
     try {
-      const res = await fetch('/api/stock', {
+      const res = await this.apiFetch('/api/stock', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
@@ -680,7 +815,7 @@ class AppStore {
       date: expenseData.date || new Date().toISOString(),
       category: expenseData.category || 'Operasional',
       description: expenseData.description || 'Pengeluaran Toko',
-      amount: Number(expenseData.amount) || 0,
+      amount: Math.round(Number(expenseData.amount) || 0),
       recordedBy: 'Admin'
     };
 
@@ -689,7 +824,7 @@ class AppStore {
     this.notify();
 
     try {
-      const res = await fetch('/api/expenses', {
+      const res = await this.apiFetch('/api/expenses', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newExpense)
@@ -712,7 +847,7 @@ class AppStore {
     this.notify();
 
     try {
-      const res = await fetch(`/api/expenses?id=${encodeURIComponent(expenseId)}`, {
+      const res = await this.apiFetch(`/api/expenses?id=${encodeURIComponent(expenseId)}`, {
         method: 'DELETE'
       });
       if (res.ok) {
@@ -734,9 +869,9 @@ class AppStore {
       name: discountData.name,
       code: (discountData.code || '').toUpperCase().trim(),
       type: discountData.type || 'percentage',
-      value: Number(discountData.value) || 0,
-      minPurchase: Number(discountData.minPurchase) || 0,
-      maxDiscount: Number(discountData.maxDiscount) || 0,
+      value: Math.round(Number(discountData.value) || 0),
+      minPurchase: Math.round(Number(discountData.minPurchase) || 0),
+      maxDiscount: Math.round(Number(discountData.maxDiscount) || 0),
       isActive: discountData.isActive !== undefined ? Boolean(discountData.isActive) : true
     };
 
@@ -750,7 +885,7 @@ class AppStore {
     this.notify();
 
     try {
-      const res = await fetch('/api/discounts', {
+      const res = await this.apiFetch('/api/discounts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...finalDiscount, isActive: finalDiscount.isActive ? 1 : 0 })
@@ -773,7 +908,7 @@ class AppStore {
     this.notify();
 
     try {
-      const res = await fetch(`/api/discounts?id=${encodeURIComponent(discountId)}`, {
+      const res = await this.apiFetch(`/api/discounts?id=${encodeURIComponent(discountId)}`, {
         method: 'DELETE'
       });
       if (res.ok) {
@@ -795,7 +930,7 @@ class AppStore {
     }
 
     try {
-      const res = await fetch('/api/discounts/toggle', {
+      const res = await this.apiFetch('/api/discounts/toggle', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: discountId })
@@ -812,12 +947,15 @@ class AppStore {
 
   // ==================== SETTINGS & BACKUP ====================
   async updateSettings(newSettings) {
-    this.settings = { ...this.settings, ...newSettings };
+    const sanitizedLocal = { ...newSettings };
+    delete sanitizedLocal.adminPassword;
+    delete sanitizedLocal.cashierPin;
+    this.settings = { ...this.settings, ...sanitizedLocal };
     this.saveData('pos_settings', this.settings);
     this.notify();
 
     try {
-      const res = await fetch('/api/settings', {
+      const res = await this.apiFetch('/api/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newSettings)
@@ -857,7 +995,7 @@ class AppStore {
     try {
       const data = typeof jsonData === 'string' ? JSON.parse(jsonData) : jsonData;
       if (data.products && data.settings) {
-        const res = await fetch('/api/import', {
+        const res = await this.apiFetch('/api/import', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(data)
@@ -877,8 +1015,14 @@ class AppStore {
 
   async resetToDefault() {
     try {
-      await fetch('/api/reset', { method: 'POST' });
+      await this.apiFetch('/api/reset', { method: 'POST' });
+      const token = this.authToken;
+      const role = this.currentRole;
+      const cashierName = this.cashierName;
       localStorage.clear();
+      if (token) localStorage.setItem('pos_auth_token', token);
+      if (role) localStorage.setItem('pos_role', role);
+      if (cashierName) localStorage.setItem('pos_cashier_name', cashierName);
       window.location.reload();
     } catch (e) {
       window.location.reload();

@@ -32,8 +32,9 @@ function renderAdminTransactions() {
     return matchPayment && matchSearch && matchDate;
   });
 
-  const totalOmset = filtered.reduce((acc, t) => acc + Number(t.total || 0), 0);
-  const totalLaba = filtered.reduce((acc, t) => acc + Number(t.profit || 0), 0);
+  const activeFiltered = filtered.filter(t => t.status !== 'void');
+  const totalOmset = activeFiltered.reduce((acc, t) => acc + Number(t.total || 0), 0);
+  const totalLaba = activeFiltered.reduce((acc, t) => acc + Number(t.profit || 0), 0);
 
   return `
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6 pb-24 md:pb-8">
@@ -121,10 +122,16 @@ function renderAdminTransactions() {
                 const items = t.items || [];
                 const totalItems = items.reduce((sum, i) => sum + Number(i.qty || 0), 0);
                 const itemSummary = items.slice(0, 2).map(i => `${i.name} (x${i.qty})`).join(', ') + (items.length > 2 ? ` +${items.length - 2} lainnya` : '');
+                const isVoid = t.status === 'void';
 
                 return `
-                  <tr class="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition">
-                    <td class="py-3 px-4 font-mono font-bold text-slate-900 dark:text-white">${escapeHtml(t.id)}</td>
+                  <tr class="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition ${isVoid ? 'opacity-60 bg-rose-50/20 dark:bg-rose-950/10' : ''}">
+                    <td class="py-3 px-4 font-mono font-bold text-slate-900 dark:text-white">
+                      <div class="flex items-center space-x-1.5">
+                        <span class="${isVoid ? 'line-through text-slate-400' : ''}">${escapeHtml(t.id)}</span>
+                        ${isVoid ? `<span class="px-1.5 py-0.5 rounded bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300 text-[9px] font-extrabold uppercase">VOID</span>` : ''}
+                      </div>
+                    </td>
                     <td class="py-3 px-4 font-mono text-slate-500">${formatDateTime(t.date)}</td>
                     <td class="py-3 px-4">
                       <div class="font-semibold">${escapeHtml(t.customerName || 'Umum')}</div>
@@ -145,8 +152,8 @@ function renderAdminTransactions() {
                         ${escapeHtml(t.paymentMethod)}
                       </span>
                     </td>
-                    <td class="py-3 px-4 text-right font-mono font-bold text-slate-900 dark:text-white">${formatRupiah(t.total)}</td>
-                    <td class="py-3 px-4 text-right font-mono font-semibold text-emerald-600 dark:text-emerald-400">${t.profit >= 0 ? '+' : ''}${formatRupiah(t.profit)}</td>
+                    <td class="py-3 px-4 text-right font-mono font-bold ${isVoid ? 'line-through text-slate-400' : 'text-slate-900 dark:text-white'}">${formatRupiah(t.total)}</td>
+                    <td class="py-3 px-4 text-right font-mono font-semibold ${isVoid ? 'line-through text-slate-400' : 'text-emerald-600 dark:text-emerald-400'}">${isVoid ? 'Rp 0 (Void)' : `${t.profit >= 0 ? '+' : ''}${formatRupiah(t.profit)}`}</td>
                     <td class="py-3 px-4 text-center">
                       <div class="flex items-center justify-center space-x-1.5">
                         <button 
@@ -156,13 +163,19 @@ function renderAdminTransactions() {
                         >
                           <i data-lucide="printer" class="w-4 h-4"></i>
                         </button>
-                        <button 
-                          onclick="confirmVoidTransaction('${t.id}')"
-                          title="Batalkan Transaksi & Kembalikan Stok"
-                          class="p-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/50 text-rose-600 transition"
-                        >
-                          <i data-lucide="trash-2" class="w-4 h-4"></i>
-                        </button>
+                        ${!isVoid ? `
+                          <button 
+                            onclick="confirmVoidTransaction('${t.id}')"
+                            title="Void / Batalkan Transaksi & Kembalikan Stok (Audit Trail)"
+                            class="p-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/50 text-rose-600 transition"
+                          >
+                            <i data-lucide="ban" class="w-4 h-4"></i>
+                          </button>
+                        ` : `
+                          <span class="px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-400 text-[10px] font-bold" title="Transaksi telah dibatalkan (Void)">
+                            Dibatalkan
+                          </span>
+                        `}
                       </div>
                     </td>
                   </tr>
@@ -182,11 +195,11 @@ function renderAdminTransactions() {
 }
 
 async function confirmVoidTransaction(trxId) {
-  if (confirm(`Batalkan & hapus transaksi "${trxId}"?\nStok barang pada nota ini akan otomatis dikembalikan ke stok gudang.`)) {
-    await window.store.deleteTransaction(trxId);
-    window.renderApp();
-    window.store.showRealtimeToast(`🔄 Transaksi ${trxId} dibatalkan & stok dikembalikan.`);
-  }
+  const reason = prompt(`Masukkan alasan pembatalan (VOID) untuk nota "${trxId}":\n(Stok barang akan dikembalikan & riwayat transaksi tetap tersimpan dengan status VOID untuk audit)`, 'Salah input item / pembatalan pelanggan');
+  if (reason === null) return;
+  await window.store.voidTransaction(trxId, reason.trim() || 'Dibatalkan oleh Admin');
+  window.renderApp();
+  window.store.showRealtimeToast(`🔄 Transaksi ${trxId} ditandai VOID & stok dikembalikan.`);
 }
 
 function exportTransactionsCSV() {
@@ -196,11 +209,12 @@ function exportTransactionsCSV() {
     return;
   }
 
-  let csv = "\uFEFFNo. Nota,Tanggal,Kasir,Pelanggan,Total Item,Subtotal,Diskon,PPN,Total Bayar,Modal HPP,Laba,Metode Bayar\n";
+  let csv = "\uFEFFNo. Nota,Tanggal,Status,Kasir,Pelanggan,Total Item,Subtotal,Diskon,PPN,Total Bayar,Modal HPP,Laba,Metode Bayar\n";
   store.transactions.forEach(t => {
     const totalItems = (t.items || []).reduce((s, i) => s + Number(i.qty || 0), 0);
     const dateFormatted = `"${formatDateTime(t.date)}"`;
-    csv += `"${t.id}",${dateFormatted},"${(t.cashier || '').replace(/"/g, '""')}","${(t.customerName || 'Umum').replace(/"/g, '""')}",${totalItems},${t.subtotal || 0},${t.discount || 0},${t.tax || 0},${t.total || 0},${t.totalCost || 0},${t.profit || 0},"${t.paymentMethod}"\n`;
+    const statusLabel = (t.status || 'completed').toUpperCase();
+    csv += `"${t.id}",${dateFormatted},"${statusLabel}","${(t.cashier || '').replace(/"/g, '""')}","${(t.customerName || 'Umum').replace(/"/g, '""')}",${totalItems},${t.subtotal || 0},${t.discount || 0},${t.tax || 0},${t.total || 0},${t.totalCost || 0},${t.profit || 0},"${t.paymentMethod}"\n`;
   });
 
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
