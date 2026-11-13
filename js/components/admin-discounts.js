@@ -108,8 +108,9 @@ function renderAdminDiscounts() {
           <i data-lucide="search" class="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400"></i>
           <input 
             type="text" 
+            id="admin-discount-search"
             placeholder="Cari nama promo atau kode voucher..."
-            value="${discountSearchQuery}"
+            value="${escapeHtml(discountSearchQuery)}"
             oninput="discountSearchQuery = this.value; window.renderApp();"
             class="w-full pl-10 pr-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-pink-500"
           />

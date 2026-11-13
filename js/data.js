@@ -13,6 +13,9 @@ const DEFAULT_SETTINGS = {
   cashierPin: "1234", // default PIN kasir
   qrisNmid: "ID1020304050607",
   qrisMerchantName: "WARUNG BERKAH JAYA",
+  bankName: "BCA",
+  bankAccountNumber: "8830-1928-4412",
+  bankAccountHolder: "Warung Berkah Jaya",
   paperSize: "58mm", // "58mm" | "80mm"
   soundEnabled: true
 };

@@ -11,7 +11,12 @@ let currentReceiptWidth = '58mm';
 function openCheckoutModal() {
   const store = window.store;
   if (store.cart.length === 0) return;
-  const calc = store.getCartCalculations();
+
+  // Close mobile cart bottom sheet if open so it doesn't overlap
+  if (typeof isMobileCartOpen !== 'undefined' && isMobileCartOpen) {
+    isMobileCartOpen = false;
+    window.renderApp();
+  }
 
   cashAmountGiven = 0; // Kosong secara default tanpa template
   activePaymentTab = 'cash';
@@ -99,7 +104,7 @@ function renderCheckoutModalDOM() {
                   <span class="text-[11px] text-slate-400 font-medium">Ketik manual / gunakan tombol angka</span>
                 </div>
                 
-                <!-- Manual Custom Nominal Input (Kosong secara default tanpa template) -->
+                  <!-- Manual Custom Nominal Input (Kosong secara default tanpa template) -->
                 <div class="relative">
                   <span class="absolute left-4 top-1/2 -translate-y-1/2 font-bold text-slate-400 text-sm">Rp</span>
                   <input 
@@ -108,17 +113,30 @@ function renderCheckoutModalDOM() {
                     value="${cashAmountGiven > 0 ? cashAmountGiven : ''}"
                     placeholder="0"
                     oninput="handleCashInputLive(this.value)"
+                    onkeydown="if(event.key==='Enter' && cashAmountGiven >= ${calc.total} && cashAmountGiven > 0) submitCheckout();"
                     class="w-full pl-12 pr-12 py-3.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl text-2xl font-extrabold text-slate-800 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:outline-none font-mono"
                     autofocus
                   />
                   <button 
                     type="button" 
-                    onclick="handleClearCashInput()" 
-                    title="Kosongkan Input"
+                    onclick="pressKeypad('BACKSPACE')" 
+                    title="Hapus 1 Angka"
                     class="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 transition"
                   >
                     <i data-lucide="delete" class="w-4 h-4"></i>
                   </button>
+                </div>
+
+                <!-- Quick Cash Denomination Chips -->
+                <div class="flex flex-wrap gap-1.5 mt-2">
+                  <button type="button" onclick="setQuickCash(${calc.total})" class="px-2.5 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 text-[11px] font-bold hover:bg-emerald-100 transition active:scale-95">
+                    Uang Pas (${formatRupiah(calc.total)})
+                  </button>
+                  ${[10000, 20000, 50000, 100000].filter(v => v >= calc.total || v >= 10000).map(v => `
+                    <button type="button" onclick="setQuickCash(${v})" class="px-2.5 py-1.5 rounded-xl bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 text-[11px] font-bold hover:bg-slate-100 dark:hover:bg-slate-700 transition active:scale-95">
+                      ${formatRupiah(v)}
+                    </button>
+                  `).join('')}
                 </div>
               </div>
 
@@ -195,11 +213,11 @@ function renderCheckoutModalDOM() {
             <div class="space-y-3">
               <div class="p-3.5 bg-slate-50 dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 flex items-center justify-between">
                 <div>
-                  <div class="text-xs font-bold text-slate-800 dark:text-white">BCA - Bank Central Asia</div>
-                  <div class="text-sm font-mono font-bold text-indigo-600 dark:text-indigo-400">8830-1928-4412</div>
-                  <div class="text-[11px] text-slate-400">a.n ${store.settings.storeName}</div>
+                  <div class="text-xs font-bold text-slate-800 dark:text-white">${escapeHtml(store.settings.bankName || 'BCA')}</div>
+                  <div class="text-sm font-mono font-bold text-indigo-600 dark:text-indigo-400">${escapeHtml(store.settings.bankAccountNumber || '8830-1928-4412')}</div>
+                  <div class="text-[11px] text-slate-400">a.n ${escapeHtml(store.settings.bankAccountHolder || store.settings.storeName)}</div>
                 </div>
-                <button onclick="copyToClipboard('883019284412', 'No. Rekening BCA disalin!')" class="px-2.5 py-1.5 bg-white dark:bg-slate-700 rounded-xl text-xs font-semibold shadow-xs hover:bg-slate-100">
+                <button onclick="copyToClipboard('${escapeHtml((store.settings.bankAccountNumber || '883019284412').replace(/[^0-9]/g, ''))}', 'No. Rekening disalin!')" class="px-2.5 py-1.5 bg-white dark:bg-slate-700 rounded-xl text-xs font-semibold shadow-xs hover:bg-slate-100">
                   Salin
                 </button>
               </div>
@@ -207,10 +225,10 @@ function renderCheckoutModalDOM() {
               <div class="p-3.5 bg-slate-50 dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 flex items-center justify-between">
                 <div>
                   <div class="text-xs font-bold text-slate-800 dark:text-white">DANA / GoPay / OVO</div>
-                  <div class="text-sm font-mono font-bold text-indigo-600 dark:text-indigo-400">${store.settings.storePhone}</div>
-                  <div class="text-[11px] text-slate-400">a.n ${store.settings.storeName}</div>
+                  <div class="text-sm font-mono font-bold text-indigo-600 dark:text-indigo-400">${escapeHtml(store.settings.storePhone)}</div>
+                  <div class="text-[11px] text-slate-400">a.n ${escapeHtml(store.settings.storeName)}</div>
                 </div>
-                <button onclick="copyToClipboard('${store.settings.storePhone}', 'No. HP E-Wallet disalin!')" class="px-2.5 py-1.5 bg-white dark:bg-slate-700 rounded-xl text-xs font-semibold shadow-xs hover:bg-slate-100">
+                <button onclick="copyToClipboard('${escapeHtml(store.settings.storePhone)}', 'No. HP E-Wallet disalin!')" class="px-2.5 py-1.5 bg-white dark:bg-slate-700 rounded-xl text-xs font-semibold shadow-xs hover:bg-slate-100">
                   Salin
                 </button>
               </div>
@@ -246,6 +264,15 @@ function switchPaymentTab(tab) {
 }
 
 // Live Handlers for Custom Manual Cash Input
+function setQuickCash(amount) {
+  cashAmountGiven = Number(amount) || 0;
+  const input = document.getElementById('cash-input');
+  if (input) {
+    input.value = cashAmountGiven;
+  }
+  updateCashChangeUI();
+}
+
 function handleCashInputLive(val) {
   cashAmountGiven = Number(val) || 0;
   updateCashChangeUI();
@@ -688,18 +715,33 @@ function openRoleSwitchModal() {
             Ganti Mode ke ${targetRole === 'admin' ? 'Admin Toko' : 'Kasir POS'}
           </h3>
           <p class="text-xs text-slate-400 mt-1">
-            ${targetRole === 'admin' ? 'Masukkan Password Admin untuk mengakses laporan keuangan & stok.' : 'Masukkan PIN Kasir untuk memulai sesi kasir.'}
+            ${targetRole === 'admin' ? 'Masukkan Password Admin untuk mengakses laporan keuangan & stok.' : 'Masukkan nama operator & PIN Kasir untuk memulai sesi kasir.'}
           </p>
         </div>
 
+        ${targetRole === 'cashier' ? `
+          <div>
+            <label class="block text-xs font-semibold text-slate-500 mb-1.5">
+              Nama Operator Kasir
+            </label>
+            <input 
+              type="text" 
+              id="role-cashier-name-input"
+              value="${escapeHtml(store.cashierName || 'Kasir 1')}"
+              placeholder="Contoh: Kasir 1 / Budi"
+              class="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl text-center text-sm font-bold text-slate-800 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+            />
+          </div>
+        ` : ''}
+
         <div>
           <label class="block text-xs font-semibold text-slate-500 mb-1.5">
-            ${targetRole === 'admin' ? 'Password Admin (Default: admin)' : 'PIN Kasir (Default: 1234)'}
+            ${targetRole === 'admin' ? 'Password Admin' : 'PIN Kasir'}
           </label>
           <input 
-            type="${targetRole === 'admin' ? 'password' : 'password'}" 
+            type="password" 
             id="role-auth-input"
-            placeholder="${targetRole === 'admin' ? 'Ketik password...' : '4 digit PIN...'}"
+            placeholder="${targetRole === 'admin' ? 'Ketik password...' : 'Masukkan PIN kasir...'}"
             class="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl text-center text-lg font-bold text-slate-800 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:outline-none tracking-widest"
             onkeydown="if(event.key==='Enter') submitRoleSwitch('${targetRole}')"
             autofocus
@@ -729,21 +771,27 @@ function submitRoleSwitch(targetRole) {
   const val = input.value.trim();
 
   if (targetRole === 'admin') {
-    if (val === store.settings.adminPassword || val === 'admin') {
+    const expectedPass = String(store.settings.adminPassword || 'admin');
+    if (val === expectedPass) {
       store.setRole('admin');
       closeModal();
       window.navigate('admin-dashboard');
     } else {
-      if (store.settings.soundEnabled) soundFx.playError();
+      if (store.settings.soundEnabled && typeof soundFx !== 'undefined') soundFx.playError();
       alert('Password admin salah!');
     }
   } else {
-    if (val === store.settings.cashierPin || val === '1234' || val.length >= 0) {
+    const expectedPin = String(store.settings.cashierPin || '1234');
+    if (val === expectedPin) {
+      const nameInput = document.getElementById('role-cashier-name-input');
+      if (nameInput && nameInput.value.trim()) {
+        store.setCashierName(nameInput.value.trim());
+      }
       store.setRole('cashier');
       closeModal();
       window.navigate('pos');
     } else {
-      if (store.settings.soundEnabled) soundFx.playError();
+      if (store.settings.soundEnabled && typeof soundFx !== 'undefined') soundFx.playError();
       alert('PIN kasir salah!');
     }
   }
@@ -772,11 +820,11 @@ function openHeldCartsModal() {
 
         <div class="max-h-72 overflow-y-auto space-y-2 divide-y divide-slate-100 dark:divide-slate-800/60">
           ${list.length > 0 ? list.map(h => {
-            const total = h.cart.reduce((a, b) => a + b.subtotal, 0) - h.discount;
+            const total = h.cart.reduce((a, b) => a + b.subtotal, 0) - (h.discount || 0);
             return `
               <div class="pt-2 flex items-center justify-between">
                 <div>
-                  <h4 class="font-bold text-xs text-slate-800 dark:text-slate-200">${h.note}</h4>
+                  <h4 class="font-bold text-xs text-slate-800 dark:text-slate-200">${escapeHtml(h.note)}</h4>
                   <p class="text-[11px] text-slate-400">${h.cart.length} barang • ${formatRupiah(total)}</p>
                   <p class="text-[10px] text-slate-400 font-mono">${formatTime(h.date)}</p>
                 </div>
@@ -816,9 +864,24 @@ function deleteHeld(id) {
 }
 
 // ==================== CAMERA SCANNER MODAL ====================
-function openCameraScannerModal() {
+function stopActiveCameraStream() {
+  if (window._activeCameraTimer) {
+    clearInterval(window._activeCameraTimer);
+    window._activeCameraTimer = null;
+  }
+  if (window._activeCameraStream) {
+    try {
+      window._activeCameraStream.getTracks().forEach(track => track.stop());
+    } catch (e) {}
+    window._activeCameraStream = null;
+  }
+}
+
+async function openCameraScannerModal() {
   const container = document.getElementById('modal-container');
   if (!container) return;
+
+  stopActiveCameraStream();
 
   container.innerHTML = `
     <div class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
@@ -829,58 +892,159 @@ function openCameraScannerModal() {
             <i data-lucide="camera" class="w-4 h-4 text-emerald-600"></i>
             <span>Scan Barcode Kamera</span>
           </h3>
-          <button onclick="closeModal()" class="p-1 text-slate-400">
+          <button onclick="closeModal()" class="p-1 text-slate-400 hover:text-slate-200">
             <i data-lucide="x" class="w-4 h-4"></i>
           </button>
         </div>
 
         <div class="relative bg-slate-950 rounded-2xl overflow-hidden aspect-square flex items-center justify-center border-2 border-dashed border-emerald-500/50">
+          <video id="camera-scanner-video" autoplay playsinline muted class="w-full h-full object-cover hidden"></video>
           <div id="camera-scanner-view" class="w-full h-full flex flex-col items-center justify-center text-slate-400 p-4">
             <i data-lucide="scan" class="w-16 h-16 text-emerald-400 animate-pulse mb-3"></i>
-            <p class="text-xs text-slate-300">Arahkan kamera HP / PC ke barcode produk</p>
+            <p id="camera-status-text" class="text-xs text-slate-300">Menghubungkan ke kamera perangkat...</p>
           </div>
+          <div class="pointer-events-none absolute inset-x-6 top-1/2 -translate-y-1/2 h-0.5 bg-emerald-400/80 shadow-[0_0_8px_#10b981]"></div>
         </div>
 
-        <div class="space-y-2">
-          <p class="text-[11px] text-slate-400">Atau pilih salah satu barcode produk demo cepat:</p>
-          <div class="flex flex-wrap gap-1.5 justify-center">
-            ${window.store.products.slice(0, 5).map(p => `
-              <button onclick="simulateScanBarcode('${p.barcode}')" class="px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-[11px] font-mono hover:bg-emerald-100 hover:text-emerald-700">
-                ${p.barcode} (${p.name.slice(0, 10)}..)
-              </button>
-            `).join('')}
-          </div>
+        <!-- Manual Barcode Input inside Modal -->
+        <div class="flex gap-2">
+          <input
+            type="text"
+            id="modal-manual-barcode"
+            placeholder="Ketik / tempel kode barcode..."
+            onkeydown="if(event.key==='Enter'){ event.preventDefault(); simulateScanBarcode(this.value.trim()); }"
+            class="flex-1 px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-mono text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+          />
+          <button
+            type="button"
+            onclick="simulateScanBarcode(document.getElementById('modal-manual-barcode').value.trim())"
+            class="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold"
+          >
+            Cari
+          </button>
         </div>
+
+        ${window.store.products.length > 0 ? `
+          <div class="space-y-2">
+            <p class="text-[11px] text-slate-400">Atau klik cepat barcode produk tersedia:</p>
+            <div class="flex flex-wrap gap-1.5 justify-center max-h-28 overflow-y-auto">
+              ${window.store.products.slice(0, 8).map(p => `
+                <button onclick="simulateScanBarcode('${escapeHtml(p.barcode)}')" class="px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-[11px] font-mono hover:bg-emerald-100 hover:text-emerald-700 dark:hover:bg-emerald-950 dark:hover:text-emerald-300 transition">
+                  ${escapeHtml(p.barcode)} (${escapeHtml(p.name.slice(0, 12))})
+                </button>
+              `).join('')}
+            </div>
+          </div>
+        ` : ''}
 
       </div>
     </div>
   `;
 
   lucide.createIcons();
+
+  // Attempt to activate device camera
+  if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'environment' }
+      });
+      window._activeCameraStream = stream;
+      const videoEl = document.getElementById('camera-scanner-video');
+      const placeholderEl = document.getElementById('camera-scanner-view');
+      if (videoEl) {
+        videoEl.srcObject = stream;
+        videoEl.classList.remove('hidden');
+        if (placeholderEl) placeholderEl.classList.add('hidden');
+      }
+
+      // Use BarcodeDetector API if supported by browser (Chrome/Edge/Android)
+      if ('BarcodeDetector' in window) {
+        const detector = new BarcodeDetector({ formats: ['ean_13', 'ean_8', 'code_128', 'code_39', 'qr_code', 'upc_a', 'upc_e'] });
+        window._activeCameraTimer = setInterval(async () => {
+          if (!videoEl || videoEl.readyState < 2) return;
+          try {
+            const barcodes = await detector.detect(videoEl);
+            if (barcodes && barcodes.length > 0) {
+              const code = barcodes[0].rawValue;
+              if (code) {
+                simulateScanBarcode(code);
+              }
+            }
+          } catch (err) {}
+        }, 350);
+      }
+    } catch (err) {
+      const statusText = document.getElementById('camera-status-text');
+      if (statusText) {
+        statusText.innerText = 'Kamera tidak diizinkan atau membutuhkan koneksi HTTPS. Gunakan input barcode di bawah.';
+      }
+    }
+  } else {
+    const statusText = document.getElementById('camera-status-text');
+    if (statusText) {
+      statusText.innerText = 'Kamera langsung membutuhkan localhost / HTTPS. Gunakan input atau tombol barcode di bawah.';
+    }
+  }
 }
 
 function simulateScanBarcode(barcode) {
-  const match = window.store.products.find(p => p.barcode === barcode);
+  if (!barcode) return;
+  const match = window.store.products.find(p => p.barcode === barcode || p.id.toLowerCase() === barcode.toLowerCase());
   if (match) {
-    window.store.addToCart(match.id, 1);
+    const res = window.store.addToCart(match.id, 1);
+    if (!res.success) {
+      alert(res.message);
+      return;
+    }
     closeModal();
     window.renderApp();
+    window.store.showRealtimeToast(`✅ ${match.name} ditambahkan ke keranjang!`);
+  } else {
+    if (window.store.settings.soundEnabled && typeof soundFx !== 'undefined') soundFx.playError();
+    alert(`Produk dengan barcode "${barcode}" tidak ditemukan!`);
   }
 }
 
 function copyToClipboard(text, alertMsg) {
-  navigator.clipboard.writeText(text).then(() => {
-    alert(alertMsg || "Berhasil disalin!");
-  });
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(() => {
+      window.store.showRealtimeToast(`📋 ${alertMsg || "Berhasil disalin!"}`);
+    }).catch(() => fallbackCopyText(text, alertMsg));
+  } else {
+    fallbackCopyText(text, alertMsg);
+  }
+}
+
+function fallbackCopyText(text, alertMsg) {
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.position = 'fixed';
+  ta.style.opacity = '0';
+  document.body.appendChild(ta);
+  ta.focus();
+  ta.select();
+  try {
+    document.execCommand('copy');
+    window.store.showRealtimeToast(`📋 ${alertMsg || "Berhasil disalin!"}`);
+  } catch (e) {
+    alert(alertMsg || `Salin manual: ${text}`);
+  }
+  document.body.removeChild(ta);
 }
 
 function closeModal() {
+  stopActiveCameraStream();
   const container = document.getElementById('modal-container');
   if (container) container.innerHTML = '';
 }
 
 // ==================== POS DISCOUNT & PROMO SELECTOR MODAL ====================
 function openDiscountModalPos() {
+  if (typeof isMobileCartOpen !== 'undefined' && isMobileCartOpen) {
+    isMobileCartOpen = false;
+    window.renderApp();
+  }
   const store = window.store;
   const calc = store.getCartCalculations();
   const subtotal = calc.subtotal;

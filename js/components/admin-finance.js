@@ -7,11 +7,15 @@ let expenseCategoryFilter = 'all';
 function renderAdminFinance() {
   const store = window.store;
 
-  // Calculate financials
-  const totalRevenue = store.transactions.reduce((acc, t) => acc + t.total, 0);
-  const totalCostOfGoods = store.transactions.reduce((acc, t) => acc + (t.totalCost || 0), 0);
-  const grossProfit = totalRevenue - totalCostOfGoods;
-  const totalExpenses = store.expenses.reduce((acc, e) => acc + e.amount, 0);
+  // Calculate financials consistently with Dashboard
+  const totalRevenue = store.transactions.reduce((acc, t) => acc + Number(t.total || 0), 0);
+  const totalCostOfGoods = store.transactions.reduce((acc, t) => acc + Number(t.totalCost || 0), 0);
+  const grossProfit = store.transactions.reduce((acc, t) => {
+    const netSale = Number(t.subtotal || t.total || 0) - Number(t.discount || 0);
+    const cost = Number(t.totalCost || 0);
+    return acc + (t.profit !== undefined ? Number(t.profit) : (netSale - cost));
+  }, 0);
+  const totalExpenses = store.expenses.reduce((acc, e) => acc + Number(e.amount || 0), 0);
   const netProfit = grossProfit - totalExpenses;
 
   // Filter expenses

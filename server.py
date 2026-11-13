@@ -118,7 +118,7 @@ class RealtimePOSHandler(http.server.SimpleHTTPRequestHandler):
                         # Heartbeat ping
                         self.wfile.write(b": ping\n\n")
                         self.wfile.flush()
-            except (BrokenPipeError, ConnectionResetError):
+            except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError, OSError):
                 pass
             finally:
                 events.remove_client(q)
@@ -281,6 +281,20 @@ class RealtimePOSHandler(http.server.SimpleHTTPRequestHandler):
                 self.send_json({"success": True, "data": updated_data})
                 return
             self.send_json({"error": "Missing discount ID"}, status=400)
+            return
+
+        # Delete / Void Transaction (and restore stock)
+        if path == "/api/transactions":
+            trx_id = query.get("id", [None])[0]
+            if trx_id:
+                updated_data = db.delete_transaction(trx_id)
+                events.broadcast("transaction_delete", {
+                    "id": trx_id,
+                    "fullData": updated_data
+                })
+                self.send_json({"success": True, "data": updated_data})
+                return
+            self.send_json({"error": "Missing transaction ID"}, status=400)
             return
 
         self.send_json({"error": "Endpoint not found"}, status=404)

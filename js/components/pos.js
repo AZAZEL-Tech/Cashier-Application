@@ -160,7 +160,7 @@ function renderPOS() {
                 </div>
                 ${store.products.length === 0 ? `
                   <button 
-                    onclick="store.role === 'admin' ? navigate('admin-products') : openRoleSwitchModal()"
+                    onclick="window.store.currentRole === 'admin' ? navigate('admin-products') : openRoleSwitchModal()"
                     class="mt-2 px-4 py-2.5 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs inline-flex items-center space-x-1.5 shadow-lg shadow-emerald-600/20 transition"
                   >
                     <i data-lucide="plus" class="w-4 h-4"></i>
@@ -249,7 +249,8 @@ function renderCartPanel(calc, isMobile = false) {
             <span>Pelanggan:</span>
             <input 
               type="text" 
-              value="${store.customerName}" 
+              id="pos-customer-input-${isMobile ? 'mobile' : 'desktop'}"
+              value="${escapeHtml(store.customerName)}" 
               placeholder="Nama pelanggan..."
               onchange="window.store.setCustomerName(this.value)"
               class="bg-transparent border-b border-dashed border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-200 font-semibold focus:outline-none px-1 text-xs"
@@ -403,12 +404,28 @@ function handleBarcodeKey(e) {
     const val = e.target.value.trim();
     if (!val) return;
 
-    // Search exact barcode
-    const match = window.store.products.find(p => p.barcode === val || p.id.toLowerCase() === val.toLowerCase());
+    // Search exact barcode or product ID
+    let match = window.store.products.find(p => p.barcode === val || p.id.toLowerCase() === val.toLowerCase());
+    // Fallback: if exactly 1 product matches name search, add it
+    if (!match) {
+      const nameMatches = window.store.products.filter(p => p.name.toLowerCase().includes(val.toLowerCase()) || p.barcode.includes(val));
+      if (nameMatches.length === 1) {
+        match = nameMatches[0];
+      }
+    }
+
     if (match) {
-      window.store.addToCart(match.id, 1);
-      searchQuery = '';
-      e.target.value = '';
+      const res = window.store.addToCart(match.id, 1);
+      if (!res.success) {
+        alert(res.message);
+      } else {
+        searchQuery = '';
+        e.target.value = '';
+        window.renderApp();
+      }
+    } else {
+      if (window.store.settings.soundEnabled && typeof soundFx !== 'undefined') soundFx.playError();
+      window.store.showRealtimeToast(`⚠️ Barcode / produk "${escapeHtml(val)}" tidak ditemukan.`);
     }
   }
 }

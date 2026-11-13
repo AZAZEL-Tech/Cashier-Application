@@ -22,6 +22,22 @@ function renderApp() {
   const appRoot = document.getElementById('app-root');
   if (!appRoot) return;
 
+  // Ensure modal-container exists outside app-root so background sync doesn't close active modals
+  if (!document.getElementById('modal-container')) {
+    const modalDiv = document.createElement('div');
+    modalDiv.id = 'modal-container';
+    document.body.appendChild(modalDiv);
+  }
+
+  // Preserve active input focus and cursor position before re-rendering
+  const activeEl = document.activeElement;
+  const shouldRestoreFocus = activeEl && appRoot.contains(activeEl) && activeEl.id && ['INPUT', 'TEXTAREA'].includes(activeEl.tagName);
+  const focusState = shouldRestoreFocus ? {
+    id: activeEl.id,
+    selectionStart: typeof activeEl.selectionStart === 'number' ? activeEl.selectionStart : null,
+    selectionEnd: typeof activeEl.selectionEnd === 'number' ? activeEl.selectionEnd : null
+  } : null;
+
   const store = window.store;
 
   // If cashier role, always default to 'pos'
@@ -62,9 +78,21 @@ function renderApp() {
       <main class="flex-1">
         ${mainContent}
       </main>
-      <div id="modal-container"></div>
     </div>
   `;
+
+  // Restore focus & cursor position if user was typing in an input inside appRoot
+  if (focusState) {
+    const newEl = document.getElementById(focusState.id);
+    if (newEl) {
+      newEl.focus();
+      try {
+        if (focusState.selectionStart !== null && newEl.type !== 'number') {
+          newEl.setSelectionRange(focusState.selectionStart, focusState.selectionEnd);
+        }
+      } catch (e) {}
+    }
+  }
 
   // Render Lucide icons
   if (typeof lucide !== 'undefined') {

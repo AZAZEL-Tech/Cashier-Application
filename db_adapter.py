@@ -35,6 +35,9 @@ DEFAULT_SETTINGS = {
     "cashierPin": "1234",
     "qrisNmid": "ID1020304050607",
     "qrisMerchantName": "WARUNG BERKAH JAYA",
+    "bankName": "BCA",
+    "bankAccountNumber": "8830-1928-4412",
+    "bankAccountHolder": "Warung Berkah Jaya",
     "paperSize": "58mm",
     "soundEnabled": True
 }
@@ -559,7 +562,7 @@ class DatabaseEngine:
                         ON DUPLICATE KEY UPDATE status=VALUES(status)
                         """, (trx_id, trx_date, cashier, customer_name, subtotal, discount, tax, total, total_cost, profit, payment_method, amount_paid, change_amount, status))
 
-                        for item in items:
+                        for idx, item in enumerate(items):
                             prod_id = item.get("id", "")
                             qty = item.get("qty", 1)
                             cost_p = item.get("costPrice", 0)
@@ -576,10 +579,11 @@ class DatabaseEngine:
                             cur.execute("UPDATE products SET stock = GREATEST(0, stock - %s) WHERE id = %s", (qty, prod_id))
 
                             # Record Stock Mutation
-                            stk_id = f"STK-{int(time.time()*1000)}"
+                            stk_id = f"STK-{int(time.time()*1000)}-{idx}"
                             cur.execute("""
                             INSERT INTO stock_history (id, date, productId, productName, type, qty, reason, user)
                             VALUES (%s, %s, %s, %s, 'out', %s, %s, %s)
+                            ON DUPLICATE KEY UPDATE qty=VALUES(qty)
                             """, (stk_id, trx_date, prod_id, item_name, qty, f"Penjualan #{trx_id}", cashier))
                 finally:
                     conn.close()
@@ -592,7 +596,7 @@ class DatabaseEngine:
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, (trx_id, trx_date, cashier, customer_name, subtotal, discount, tax, total, total_cost, profit, payment_method, amount_paid, change_amount, status))
 
-                    for item in items:
+                    for idx, item in enumerate(items):
                         prod_id = item.get("id", "")
                         qty = item.get("qty", 1)
                         cost_p = item.get("costPrice", 0)
@@ -609,15 +613,64 @@ class DatabaseEngine:
                         cur.execute("UPDATE products SET stock = MAX(0, stock - ?) WHERE id = ?", (qty, prod_id))
 
                         # Record Stock Mutation
-                        stk_id = f"STK-{int(time.time()*1000)}"
+                        stk_id = f"STK-{int(time.time()*1000)}-{idx}"
                         cur.execute("""
-                        INSERT INTO stock_history (id, date, productId, productName, type, qty, reason, user)
+                        INSERT OR REPLACE INTO stock_history (id, date, productId, productName, type, qty, reason, user)
                         VALUES (?, ?, ?, ?, 'out', ?, ?, ?)
                         """, (stk_id, trx_date, prod_id, item_name, qty, f"Penjualan #{trx_id}", cashier))
                     conn.commit()
                 finally:
                     conn.close()
 
+            return self.get_all()
+
+    def delete_transaction(self, trx_id):
+        with self.lock:
+            date_str = time.strftime("%Y-%m-%dT%H:%M:%SZ")
+            if self.driver_type == "mysql":
+                conn = self._get_mysql_connection()
+                try:
+                    with conn.cursor() as cur:
+                        cur.execute("SELECT product_id, name, qty FROM transaction_items WHERE transaction_id = %s", (trx_id,))
+                        items = cur.fetchall()
+                        for idx, item in enumerate(items):
+                            prod_id = item.get("product_id", "")
+                            qty = int(item.get("qty", 0))
+                            item_name = item.get("name", "")
+                            if prod_id and qty > 0:
+                                cur.execute("UPDATE products SET stock = stock + %s WHERE id = %s", (qty, prod_id))
+                                stk_id = f"STK-{int(time.time()*1000)}-VOID-{idx}"
+                                cur.execute("""
+                                INSERT INTO stock_history (id, date, productId, productName, type, qty, reason, user)
+                                VALUES (%s, %s, %s, %s, 'in', %s, %s, 'Admin')
+                                ON DUPLICATE KEY UPDATE qty=VALUES(qty)
+                                """, (stk_id, date_str, prod_id, item_name, qty, f"Pembatalan Nota #{trx_id}"))
+                        cur.execute("DELETE FROM transaction_items WHERE transaction_id = %s", (trx_id,))
+                        cur.execute("DELETE FROM transactions WHERE id = %s", (trx_id,))
+                finally:
+                    conn.close()
+            else:
+                conn = self._get_sqlite_connection()
+                try:
+                    cur = conn.cursor()
+                    cur.execute("SELECT product_id, name, qty FROM transaction_items WHERE transaction_id = ?", (trx_id,))
+                    items = [dict(r) for r in cur.fetchall()]
+                    for idx, item in enumerate(items):
+                        prod_id = item.get("product_id", "")
+                        qty = int(item.get("qty", 0))
+                        item_name = item.get("name", "")
+                        if prod_id and qty > 0:
+                            cur.execute("UPDATE products SET stock = stock + ? WHERE id = ?", (qty, prod_id))
+                            stk_id = f"STK-{int(time.time()*1000)}-VOID-{idx}"
+                            cur.execute("""
+                            INSERT OR REPLACE INTO stock_history (id, date, productId, productName, type, qty, reason, user)
+                            VALUES (?, ?, ?, ?, 'in', ?, ?, 'Admin')
+                            """, (stk_id, date_str, prod_id, item_name, qty, f"Pembatalan Nota #{trx_id}"))
+                    cur.execute("DELETE FROM transaction_items WHERE transaction_id = ?", (trx_id,))
+                    cur.execute("DELETE FROM transactions WHERE id = ?", (trx_id,))
+                    conn.commit()
+                finally:
+                    conn.close()
             return self.get_all()
 
     def save_product(self, product):
@@ -917,6 +970,135 @@ class DatabaseEngine:
                     conn.close()
             return self.get_all()
 
+    def import_database(self, data):
+        with self.lock:
+            settings_data = data.get("settings") or {}
+            categories_data = data.get("categories") or DEFAULT_CATEGORIES
+            products_data = data.get("products") or []
+            discounts_data = data.get("discounts") or []
+            transactions_data = data.get("transactions") or []
+            expenses_data = data.get("expenses") or []
+            stock_history_data = data.get("stockHistory") or []
+
+            if self.driver_type == "mysql":
+                conn = self._get_mysql_connection()
+                try:
+                    with conn.cursor() as cur:
+                        cur.execute("TRUNCATE TABLE transaction_items")
+                        cur.execute("DELETE FROM transactions")
+                        cur.execute("DELETE FROM expenses")
+                        cur.execute("DELETE FROM stock_history")
+                        cur.execute("DELETE FROM discounts")
+                        cur.execute("DELETE FROM products")
+                        cur.execute("DELETE FROM categories")
+                        cur.execute("DELETE FROM settings")
+
+                        merged_settings = {**DEFAULT_SETTINGS, **settings_data}
+                        for k, v in merged_settings.items():
+                            cur.execute("INSERT INTO settings (setting_key, setting_val) VALUES (%s, %s)", (k, json.dumps(v)))
+
+                        for cat in categories_data:
+                            cur.execute("INSERT INTO categories (id, name, icon) VALUES (%s, %s, %s)", (cat.get("id", ""), cat.get("name", ""), cat.get("icon", "package")))
+
+                        for p in products_data:
+                            cur.execute("""
+                            INSERT INTO products (id, name, barcode, category, costPrice, sellPrice, stock, minStock, unit, image)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                            """, (p.get("id"), p.get("name", ""), p.get("barcode", ""), p.get("category", "sembako"), p.get("costPrice", 0), p.get("sellPrice", 0), p.get("stock", 0), p.get("minStock", 5), p.get("unit", "pcs"), p.get("image", "")))
+
+                        for d in discounts_data:
+                            cur.execute("""
+                            INSERT INTO discounts (id, name, code, type, value, minPurchase, maxDiscount, isActive)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                            """, (d.get("id"), d.get("name", ""), d.get("code", ""), d.get("type", "percentage"), d.get("value", 0), d.get("minPurchase", 0), d.get("maxDiscount", 0), 1 if d.get("isActive", True) else 0))
+
+                        for t in transactions_data:
+                            t_id = t.get("id")
+                            cur.execute("""
+                            INSERT INTO transactions (id, date, cashier, customerName, subtotal, discount, tax, total, totalCost, profit, paymentMethod, amountPaid, changeAmount, status)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                            """, (t_id, t.get("date", ""), t.get("cashier", "Kasir 1"), t.get("customerName", "Umum"), t.get("subtotal", 0), t.get("discount", 0), t.get("tax", 0), t.get("total", 0), t.get("totalCost", 0), t.get("profit", 0), t.get("paymentMethod", "cash"), t.get("amountPaid", 0), t.get("change", 0), t.get("status", "completed")))
+                            for item in t.get("items", []):
+                                cur.execute("""
+                                INSERT INTO transaction_items (transaction_id, product_id, name, qty, costPrice, sellPrice, subtotal)
+                                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                                """, (t_id, item.get("id", ""), item.get("name", ""), item.get("qty", 1), item.get("costPrice", 0), item.get("sellPrice", 0), item.get("subtotal", 0)))
+
+                        for e in expenses_data:
+                            cur.execute("""
+                            INSERT INTO expenses (id, date, category, description, amount, recordedBy)
+                            VALUES (%s, %s, %s, %s, %s, %s)
+                            """, (e.get("id"), e.get("date", ""), e.get("category", "Operasional"), e.get("description", ""), e.get("amount", 0), e.get("recordedBy", "Admin")))
+
+                        for s in stock_history_data:
+                            cur.execute("""
+                            INSERT INTO stock_history (id, date, productId, productName, type, qty, reason, user)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                            """, (s.get("id"), s.get("date", ""), s.get("productId", ""), s.get("productName", ""), s.get("type", "in"), s.get("qty", 0), s.get("reason", ""), s.get("user", "Admin")))
+                finally:
+                    conn.close()
+            else:
+                conn = self._get_sqlite_connection()
+                try:
+                    cur = conn.cursor()
+                    cur.execute("DELETE FROM transaction_items")
+                    cur.execute("DELETE FROM transactions")
+                    cur.execute("DELETE FROM expenses")
+                    cur.execute("DELETE FROM stock_history")
+                    cur.execute("DELETE FROM discounts")
+                    cur.execute("DELETE FROM products")
+                    cur.execute("DELETE FROM categories")
+                    cur.execute("DELETE FROM settings")
+
+                    merged_settings = {**DEFAULT_SETTINGS, **settings_data}
+                    for k, v in merged_settings.items():
+                        cur.execute("INSERT OR REPLACE INTO settings (setting_key, setting_val) VALUES (?, ?)", (k, json.dumps(v)))
+
+                    for cat in categories_data:
+                        cur.execute("INSERT OR REPLACE INTO categories (id, name, icon) VALUES (?, ?, ?)", (cat.get("id", ""), cat.get("name", ""), cat.get("icon", "package")))
+
+                    for p in products_data:
+                        cur.execute("""
+                        INSERT OR REPLACE INTO products (id, name, barcode, category, costPrice, sellPrice, stock, minStock, unit, image)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """, (p.get("id"), p.get("name", ""), p.get("barcode", ""), p.get("category", "sembako"), p.get("costPrice", 0), p.get("sellPrice", 0), p.get("stock", 0), p.get("minStock", 5), p.get("unit", "pcs"), p.get("image", "")))
+
+                    for d in discounts_data:
+                        cur.execute("""
+                        INSERT OR REPLACE INTO discounts (id, name, code, type, value, minPurchase, maxDiscount, isActive)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        """, (d.get("id"), d.get("name", ""), d.get("code", ""), d.get("type", "percentage"), d.get("value", 0), d.get("minPurchase", 0), d.get("maxDiscount", 0), 1 if d.get("isActive", True) else 0))
+
+                    for t in transactions_data:
+                        t_id = t.get("id")
+                        cur.execute("""
+                        INSERT OR REPLACE INTO transactions (id, date, cashier, customerName, subtotal, discount, tax, total, totalCost, profit, paymentMethod, amountPaid, changeAmount, status)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """, (t_id, t.get("date", ""), t.get("cashier", "Kasir 1"), t.get("customerName", "Umum"), t.get("subtotal", 0), t.get("discount", 0), t.get("tax", 0), t.get("total", 0), t.get("totalCost", 0), t.get("profit", 0), t.get("paymentMethod", "cash"), t.get("amountPaid", 0), t.get("change", 0), t.get("status", "completed")))
+                        for item in t.get("items", []):
+                            cur.execute("""
+                            INSERT INTO transaction_items (transaction_id, product_id, name, qty, costPrice, sellPrice, subtotal)
+                            VALUES (?, ?, ?, ?, ?, ?, ?)
+                            """, (t_id, item.get("id", ""), item.get("name", ""), item.get("qty", 1), item.get("costPrice", 0), item.get("sellPrice", 0), item.get("subtotal", 0)))
+
+                    for e in expenses_data:
+                        cur.execute("""
+                        INSERT OR REPLACE INTO expenses (id, date, category, description, amount, recordedBy)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                        """, (e.get("id"), e.get("date", ""), e.get("category", "Operasional"), e.get("description", ""), e.get("amount", 0), e.get("recordedBy", "Admin")))
+
+                    for s in stock_history_data:
+                        cur.execute("""
+                        INSERT OR REPLACE INTO stock_history (id, date, productId, productName, type, qty, reason, user)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        """, (s.get("id"), s.get("date", ""), s.get("productId", ""), s.get("productName", ""), s.get("type", "in"), s.get("qty", 0), s.get("reason", ""), s.get("user", "Admin")))
+
+                    conn.commit()
+                finally:
+                    conn.close()
+
+            return self.get_all()
+
     def reset(self):
         with self.lock:
             if self.driver_type == "mysql":
@@ -927,6 +1109,7 @@ class DatabaseEngine:
                         cur.execute("DELETE FROM transactions")
                         cur.execute("DELETE FROM expenses")
                         cur.execute("DELETE FROM stock_history")
+                        cur.execute("DELETE FROM discounts")
                         cur.execute("DELETE FROM products")
                         cur.execute("DELETE FROM categories")
                         cur.execute("DELETE FROM settings")
@@ -941,6 +1124,7 @@ class DatabaseEngine:
                     cur.execute("DELETE FROM transactions")
                     cur.execute("DELETE FROM expenses")
                     cur.execute("DELETE FROM stock_history")
+                    cur.execute("DELETE FROM discounts")
                     cur.execute("DELETE FROM products")
                     cur.execute("DELETE FROM categories")
                     cur.execute("DELETE FROM settings")

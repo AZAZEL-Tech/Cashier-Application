@@ -64,8 +64,9 @@ function renderAdminProducts() {
             <i data-lucide="search" class="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400"></i>
             <input 
               type="text" 
+              id="admin-product-search"
               placeholder="Cari nama barang atau barcode..."
-              value="${productSearchQuery}"
+              value="${escapeHtml(productSearchQuery)}"
               oninput="productSearchQuery = this.value; window.renderApp();"
               class="w-full pl-10 pr-4 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
             />
@@ -157,7 +158,7 @@ function renderAdminProducts() {
                             <i data-lucide="pencil" class="w-4 h-4"></i>
                           </button>
                           <button 
-                            onclick="confirmDeleteProduct('${p.id}', '${p.name}')" 
+                            onclick="confirmDeleteProduct('${p.id}', '${p.name.replace(/'/g, "\\'")}')" 
                             title="Hapus Produk"
                             class="p-1.5 rounded-lg bg-rose-50 text-rose-600 dark:bg-rose-950/50 hover:bg-rose-100 transition"
                           >
@@ -400,7 +401,7 @@ function openProductModal(productId = null) {
   lucide.createIcons();
 }
 
-function handleSaveProduct(e, id) {
+async function handleSaveProduct(e, id) {
   e.preventDefault();
   const form = e.target;
   const productData = {
@@ -416,15 +417,17 @@ function handleSaveProduct(e, id) {
     image: form.image.value.trim()
   };
 
-  window.store.saveProduct(productData);
+  await window.store.saveProduct(productData);
   closeModal();
   window.renderApp();
+  window.store.showRealtimeToast(`✅ Produk "${productData.name}" berhasil disimpan!`);
 }
 
-function confirmDeleteProduct(id, name) {
+async function confirmDeleteProduct(id, name) {
   if (confirm(`Apakah Anda yakin ingin menghapus produk "${name}"?`)) {
-    window.store.deleteProduct(id);
+    await window.store.deleteProduct(id);
     window.renderApp();
+    window.store.showRealtimeToast(`🗑️ Produk "${name}" telah dihapus.`);
   }
 }
 
@@ -444,7 +447,7 @@ function openRestockModal(productId) {
         <div class="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
           <h3 class="font-bold text-base text-slate-800 dark:text-white flex items-center space-x-2">
             <i data-lucide="boxes" class="w-5 h-5 text-amber-500"></i>
-            <span>Mutasi Stok: ${p.name}</span>
+            <span>Mutasi Stok: ${escapeHtml(p.name)}</span>
           </h3>
           <button onclick="closeModal()" class="p-1.5 text-slate-400">
             <i data-lucide="x" class="w-5 h-5"></i>
@@ -454,25 +457,25 @@ function openRestockModal(productId) {
         <form onsubmit="handleSubmitRestock(event, '${p.id}')" class="space-y-4 text-xs">
           <div class="p-3 bg-slate-50 dark:bg-slate-800 rounded-2xl flex justify-between items-center font-semibold">
             <span class="text-slate-500">Stok Saat Ini:</span>
-            <span class="text-sm font-bold text-slate-800 dark:text-white font-mono">${p.stock} ${p.unit}</span>
+            <span class="text-sm font-bold text-slate-800 dark:text-white font-mono">${p.stock} ${escapeHtml(p.unit)}</span>
           </div>
 
           <div>
             <label class="block font-semibold text-slate-600 dark:text-slate-300 mb-1.5">Tipe Mutasi</label>
             <div class="grid grid-cols-2 gap-2">
               <label class="flex items-center space-x-2 p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 cursor-pointer bg-slate-50 dark:bg-slate-800">
-                <input type="radio" name="type" value="in" checked class="text-emerald-600" />
+                <input type="radio" name="type" value="in" checked onchange="const el=document.getElementById('restock-expense-box'); if(el) el.style.display='block';" class="text-emerald-600" />
                 <span class="font-bold text-emerald-600 dark:text-emerald-400">+ Barang Masuk (Restock)</span>
               </label>
               <label class="flex items-center space-x-2 p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 cursor-pointer bg-slate-50 dark:bg-slate-800">
-                <input type="radio" name="type" value="out" class="text-rose-600" />
+                <input type="radio" name="type" value="out" onchange="const el=document.getElementById('restock-expense-box'); if(el) el.style.display='none';" class="text-rose-600" />
                 <span class="font-bold text-rose-600 dark:text-rose-400">- Barang Keluar (Rusak/Hilang)</span>
               </label>
             </div>
           </div>
 
           <div>
-            <label class="block font-semibold text-slate-600 dark:text-slate-300 mb-1">Jumlah (${p.unit}) *</label>
+            <label class="block font-semibold text-slate-600 dark:text-slate-300 mb-1">Jumlah (${escapeHtml(p.unit)}) *</label>
             <input 
               type="number" 
               name="qty" 
@@ -493,7 +496,7 @@ function openRestockModal(productId) {
             />
           </div>
 
-          <div class="p-3 bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800/60 rounded-2xl">
+          <div id="restock-expense-box" class="p-3 bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800/60 rounded-2xl">
             <label class="flex items-center space-x-2 text-indigo-900 dark:text-indigo-200 cursor-pointer font-semibold">
               <input type="checkbox" name="recordExpense" checked class="rounded text-indigo-600" />
               <span>Otomatis catat total belanja ke Pengeluaran Toko (Buku Kas)</span>
@@ -513,7 +516,7 @@ function openRestockModal(productId) {
   lucide.createIcons();
 }
 
-function handleSubmitRestock(e, productId) {
+async function handleSubmitRestock(e, productId) {
   e.preventDefault();
   const form = e.target;
   const qty = form.qty.value;
@@ -521,7 +524,8 @@ function handleSubmitRestock(e, productId) {
   const reason = form.reason.value;
   const recordExpense = type === 'in' && form.recordExpense.checked;
 
-  window.store.adjustStock(productId, qty, type, reason, recordExpense);
+  await window.store.adjustStock(productId, qty, type, reason, recordExpense);
   closeModal();
   window.renderApp();
+  window.store.showRealtimeToast(`📦 Mutasi stok (${type === 'in' ? '+' : '-'}${qty}) berhasil disimpan!`);
 }

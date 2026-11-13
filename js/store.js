@@ -403,12 +403,34 @@ class AppStore {
   restoreHeldCart(holdId) {
     const index = this.heldCarts.findIndex(h => h.id === holdId);
     if (index === -1) return;
-    const held = this.heldCarts[index];
-    this.cart = held.cart;
-    this.activeDiscount = held.discount;
+    const held = this.heldCarts.splice(index, 1)[0];
+
+    // If current cart is not empty, preserve it as a held cart so items aren't lost
+    if (this.cart.length > 0) {
+      this.heldCarts.push({
+        id: 'HOLD-' + Date.now(),
+        date: new Date().toISOString(),
+        customerName: this.customerName,
+        note: `Pesanan ${this.customerName} (Disimpan Otomatis)`,
+        cart: [...this.cart],
+        discount: this.activeDiscount,
+        discountInfo: this.activeDiscountInfo
+      });
+    }
+
+    this.cart = held.cart || [];
+    this.activeDiscount = Number(held.discount || 0);
     this.activeDiscountInfo = held.discountInfo || null;
-    this.customerName = held.customerName;
-    this.heldCarts.splice(index, 1);
+    this.customerName = held.customerName || 'Umum';
+
+    localStorage.setItem('pos_cart_discount', this.activeDiscount);
+    if (this.activeDiscountInfo) {
+      localStorage.setItem('pos_cart_discount_info', JSON.stringify(this.activeDiscountInfo));
+    } else {
+      localStorage.removeItem('pos_cart_discount_info');
+    }
+    localStorage.setItem('pos_customer_name', this.customerName);
+
     this.saveData('pos_held_carts', this.heldCarts);
     this.persistCart();
     this.notify();
@@ -446,7 +468,7 @@ class AppStore {
     const taxableAmount = Math.max(0, subtotal - discount);
     const tax = this.settings.taxRate > 0 ? Math.round((taxableAmount * this.settings.taxRate) / 100) : 0;
     const total = taxableAmount + tax;
-    const profit = Math.max(0, (subtotal - discount) - totalCost);
+    const profit = (subtotal - discount) - totalCost;
     const totalItems = this.cart.reduce((acc, item) => acc + item.qty, 0);
 
     return {
@@ -498,15 +520,20 @@ class AppStore {
     });
 
     this.transactions.unshift(newTransaction);
+    this.saveData('pos_products', this.products);
+    this.saveData('pos_transactions', this.transactions);
     this.clearCart();
 
     // Broadcast to Server via REST API
     try {
-      await fetch('/api/checkout', {
+      const res = await fetch('/api/checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newTransaction)
       });
+      if (res.ok) {
+        // Server will also broadcast SSE, state is synced
+      }
     } catch (e) {
       console.warn("Offline checkout mode:", e);
     }
@@ -519,9 +546,35 @@ class AppStore {
     return newTransaction;
   }
 
+  async deleteTransaction(trxId) {
+    // Optimistically restore stock & remove locally
+    const trx = this.transactions.find(t => t.id === trxId);
+    if (trx && Array.isArray(trx.items)) {
+      trx.items.forEach(item => {
+        const prod = this.products.find(p => p.id === item.id);
+        if (prod) prod.stock = Number(prod.stock || 0) + Number(item.qty || 0);
+      });
+    }
+    this.transactions = this.transactions.filter(t => t.id !== trxId);
+    this.saveData('pos_products', this.products);
+    this.saveData('pos_transactions', this.transactions);
+
+    try {
+      const res = await fetch(`/api/transactions?id=${encodeURIComponent(trxId)}`, {
+        method: 'DELETE'
+      });
+      if (res.ok) {
+        const json = await res.json();
+        if (json.data) this.applyServerState(json.data);
+      }
+    } catch (e) {
+      console.warn("Offline transaction delete:", e);
+    }
+    this.notify();
+  }
+
   // ==================== PRODUCT CRUD (SYNCED) ====================
   async saveProduct(productData) {
-    const isEdit = Boolean(productData.id);
     let productId = productData.id || ('P' + String(Date.now()).slice(-6));
 
     const finalProduct = {
@@ -537,12 +590,27 @@ class AppStore {
       image: productData.image || 'https://images.unsplash.com/photo-1542838132-92c53300491e?w=400&auto=format&fit=crop&q=60'
     };
 
+    // Optimistic local update
+    const existingIdx = this.products.findIndex(p => p.id === productId);
+    if (existingIdx >= 0) {
+      this.products[existingIdx] = finalProduct;
+    } else {
+      this.products.push(finalProduct);
+    }
+    this.saveData('pos_products', this.products);
+    this.notify();
+
     try {
-      await fetch('/api/products', {
+      const res = await fetch('/api/products', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(finalProduct)
       });
+      if (res.ok) {
+        const json = await res.json();
+        if (json.data) this.applyServerState(json.data);
+        this.notify();
+      }
     } catch (e) {
       console.warn("Server offline, saved locally:", e);
     }
@@ -551,10 +619,19 @@ class AppStore {
   }
 
   async deleteProduct(productId) {
+    this.products = this.products.filter(p => p.id !== productId);
+    this.saveData('pos_products', this.products);
+    this.notify();
+
     try {
-      await fetch(`/api/products?id=${productId}`, {
+      const res = await fetch(`/api/products?id=${encodeURIComponent(productId)}`, {
         method: 'DELETE'
       });
+      if (res.ok) {
+        const json = await res.json();
+        if (json.data) this.applyServerState(json.data);
+        this.notify();
+      }
     } catch (e) {
       console.warn("Server offline, deleted locally:", e);
     }
@@ -562,21 +639,35 @@ class AppStore {
 
   // Stock In / Stock Out Mutation (Restock)
   async adjustStock(productId, qty, type, reason = '', recordExpense = false) {
+    const numQty = Math.abs(Number(qty) || 0);
     const payload = {
       productId,
-      qty,
+      qty: numQty,
       type,
       reason,
       recordExpense,
       user: 'Admin'
     };
 
+    // Optimistic local update
+    const prod = this.products.find(p => p.id === productId);
+    if (prod) {
+      prod.stock = type === 'in' ? Number(prod.stock) + numQty : Math.max(0, Number(prod.stock) - numQty);
+      this.saveData('pos_products', this.products);
+    }
+    this.notify();
+
     try {
-      await fetch('/api/stock', {
+      const res = await fetch('/api/stock', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
+      if (res.ok) {
+        const json = await res.json();
+        if (json.data) this.applyServerState(json.data);
+        this.notify();
+      }
     } catch (e) {
       console.warn("Stock mutation error:", e);
     }
@@ -593,12 +684,21 @@ class AppStore {
       recordedBy: 'Admin'
     };
 
+    this.expenses.unshift(newExpense);
+    this.saveData('pos_expenses', this.expenses);
+    this.notify();
+
     try {
-      await fetch('/api/expenses', {
+      const res = await fetch('/api/expenses', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newExpense)
       });
+      if (res.ok) {
+        const json = await res.json();
+        if (json.data) this.applyServerState(json.data);
+        this.notify();
+      }
     } catch (e) {
       console.warn("Server error:", e);
     }
@@ -607,10 +707,19 @@ class AppStore {
   }
 
   async deleteExpense(expenseId) {
+    this.expenses = this.expenses.filter(e => e.id !== expenseId);
+    this.saveData('pos_expenses', this.expenses);
+    this.notify();
+
     try {
-      await fetch(`/api/expenses?id=${expenseId}`, {
+      const res = await fetch(`/api/expenses?id=${encodeURIComponent(expenseId)}`, {
         method: 'DELETE'
       });
+      if (res.ok) {
+        const json = await res.json();
+        if (json.data) this.applyServerState(json.data);
+        this.notify();
+      }
     } catch (e) {
       console.warn("Server error:", e);
     }
@@ -628,15 +737,29 @@ class AppStore {
       value: Number(discountData.value) || 0,
       minPurchase: Number(discountData.minPurchase) || 0,
       maxDiscount: Number(discountData.maxDiscount) || 0,
-      isActive: discountData.isActive !== undefined ? (discountData.isActive ? 1 : 0) : 1
+      isActive: discountData.isActive !== undefined ? Boolean(discountData.isActive) : true
     };
 
+    const existingIdx = this.discounts.findIndex(d => d.id === discountId);
+    if (existingIdx >= 0) {
+      this.discounts[existingIdx] = finalDiscount;
+    } else {
+      this.discounts.unshift(finalDiscount);
+    }
+    this.saveData('pos_discounts', this.discounts);
+    this.notify();
+
     try {
-      await fetch('/api/discounts', {
+      const res = await fetch('/api/discounts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(finalDiscount)
+        body: JSON.stringify({ ...finalDiscount, isActive: finalDiscount.isActive ? 1 : 0 })
       });
+      if (res.ok) {
+        const json = await res.json();
+        if (json.data) this.applyServerState(json.data);
+        this.notify();
+      }
     } catch (e) {
       console.warn("Server error, discount saved locally:", e);
     }
@@ -645,22 +768,43 @@ class AppStore {
   }
 
   async deleteDiscount(discountId) {
+    this.discounts = this.discounts.filter(d => d.id !== discountId);
+    this.saveData('pos_discounts', this.discounts);
+    this.notify();
+
     try {
-      await fetch(`/api/discounts?id=${discountId}`, {
+      const res = await fetch(`/api/discounts?id=${encodeURIComponent(discountId)}`, {
         method: 'DELETE'
       });
+      if (res.ok) {
+        const json = await res.json();
+        if (json.data) this.applyServerState(json.data);
+        this.notify();
+      }
     } catch (e) {
       console.warn("Server error, discount deleted locally:", e);
     }
   }
 
   async toggleDiscount(discountId) {
+    const disc = this.discounts.find(d => d.id === discountId);
+    if (disc) {
+      disc.isActive = !disc.isActive;
+      this.saveData('pos_discounts', this.discounts);
+      this.notify();
+    }
+
     try {
-      await fetch('/api/discounts/toggle', {
+      const res = await fetch('/api/discounts/toggle', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: discountId })
       });
+      if (res.ok) {
+        const json = await res.json();
+        if (json.data) this.applyServerState(json.data);
+        this.notify();
+      }
     } catch (e) {
       console.warn("Server error, discount toggle failed locally:", e);
     }
@@ -668,12 +812,21 @@ class AppStore {
 
   // ==================== SETTINGS & BACKUP ====================
   async updateSettings(newSettings) {
+    this.settings = { ...this.settings, ...newSettings };
+    this.saveData('pos_settings', this.settings);
+    this.notify();
+
     try {
-      await fetch('/api/settings', {
+      const res = await fetch('/api/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newSettings)
       });
+      if (res.ok) {
+        const json = await res.json();
+        if (json.data) this.applyServerState(json.data);
+        this.notify();
+      }
     } catch (e) {
       console.warn("Settings error:", e);
     }
@@ -695,7 +848,7 @@ class AppStore {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `backup_warung_realtime_${new Date().toISOString().split('T')[0]}.json`;
+    a.download = `backup_warung_realtime_${getLocalDateKey(new Date())}.json`;
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -710,6 +863,9 @@ class AppStore {
           body: JSON.stringify(data)
         });
         if (res.ok) {
+          const json = await res.json();
+          if (json.data) this.applyServerState(json.data);
+          this.notify();
           return { success: true, message: 'Database toko berhasil dipulihkan di server!' };
         }
       }
@@ -730,7 +886,27 @@ class AppStore {
   }
 }
 
-// Helpers for formatting
+// Helpers for formatting & local timezone dates
+function getLocalDateKey(dateInput) {
+  if (!dateInput) return '';
+  const d = dateInput instanceof Date ? dateInput : new Date(dateInput);
+  if (isNaN(d.getTime())) return String(dateInput).split('T')[0];
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function escapeHtml(str) {
+  if (str === null || str === undefined) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 function formatRupiah(number) {
   return new Intl.NumberFormat('id-ID', {
     style: 'currency',
