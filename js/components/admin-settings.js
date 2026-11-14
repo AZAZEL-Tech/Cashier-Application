@@ -78,7 +78,7 @@ function renderAdminSettings() {
                 name="paperSize"
                 class="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-800 dark:text-slate-100 font-medium focus:outline-none"
               >
-                <option value="58mm" ${s.paperSize === '58mm' ? 'selected' : ''}>Thermal 58mm (Standar Mini POS)</option>
+                <option value="58mm" ${s.paperSize === '58mm' ? 'selected' : ''}>Thermal 58mm (VSC TM-58D PRO / Mini POS)</option>
                 <option value="80mm" ${s.paperSize === '80mm' ? 'selected' : ''}>Thermal 80mm (Lebar)</option>
               </select>
             </div>
@@ -94,6 +94,60 @@ function renderAdminSettings() {
                 value="${s.taxRate || 0}"
                 class="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-800 dark:text-white font-bold focus:outline-none"
               />
+            </div>
+
+            <div class="sm:col-span-2 p-3.5 rounded-2xl bg-emerald-50/70 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900/60 space-y-2.5">
+              <div class="flex flex-wrap items-center justify-between gap-2">
+                <div class="flex items-center space-x-2">
+                  <i data-lucide="printer" class="w-4 h-4 text-emerald-600 dark:text-emerald-400"></i>
+                  <span class="font-bold text-slate-800 dark:text-white text-xs">Konfigurasi Printer Struk Thermal (VSC TM-58D PRO — 58mm USB+BT)</span>
+                </div>
+                <div class="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onclick="detectInstalledPrinters()"
+                    class="px-2.5 py-1.5 rounded-lg bg-white dark:bg-slate-800 border border-emerald-300 dark:border-emerald-800 hover:bg-emerald-100 text-emerald-700 dark:text-emerald-300 font-bold text-[11px] flex items-center space-x-1 transition"
+                  >
+                    <i data-lucide="refresh-cw" class="w-3 h-3"></i>
+                    <span>Deteksi Printer USB</span>
+                  </button>
+                  <button
+                    type="button"
+                    onclick="testThermalPrinterNow()"
+                    class="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] flex items-center space-x-1 shadow-sm transition"
+                  >
+                    <i data-lucide="printer" class="w-3.5 h-3.5"></i>
+                    <span>Test Cetak 58mm</span>
+                  </button>
+                </div>
+              </div>
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <div>
+                  <label class="block text-[11px] font-semibold text-slate-600 dark:text-slate-300 mb-1">Nama Printer Windows (Kosongkan = Otomatis Deteksi POS-58 / VSC)</label>
+                  <input
+                    type="text"
+                    id="settings-printer-name"
+                    name="printerName"
+                    value="${escapeHtml(s.printerName || localStorage.getItem('WARUNGKU_PRINTER_NAME') || '')}"
+                    placeholder="Otomatis pilih printer VSC / POS-58..."
+                    class="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-800 dark:text-white font-mono text-xs focus:outline-none"
+                  />
+                </div>
+                <div class="flex items-end">
+                  <label class="inline-flex items-center space-x-2 cursor-pointer py-2">
+                    <input
+                      type="checkbox"
+                      name="autoPrintReceipt"
+                      ${localStorage.getItem('pos_auto_print') === 'true' ? 'checked' : ''}
+                      class="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500"
+                    />
+                    <span class="font-bold text-slate-700 dark:text-slate-200 text-xs">Otomatis Cetak Struk Saat Pembayaran Selesai</span>
+                  </label>
+                </div>
+              </div>
+              <div id="printer-detect-status" class="text-[11px] text-slate-500 dark:text-slate-400">
+                Mendukung cetak langsung <strong>USB ESC/POS (32 karakter / 58mm)</strong>, <strong>Dialog Print 58mm</strong>, dan <strong>Bluetooth WebBT</strong>.
+              </div>
             </div>
 
             <div>
@@ -295,11 +349,17 @@ async function handleSaveSettings(e) {
   if (form.cashierName && form.cashierName.value.trim()) {
     window.store.setCashierName(form.cashierName.value.trim());
   }
+  const printerNameVal = form.printerName ? form.printerName.value.trim() : '';
+  localStorage.setItem('WARUNGKU_PRINTER_NAME', printerNameVal);
+  if (form.autoPrintReceipt) {
+    localStorage.setItem('pos_auto_print', form.autoPrintReceipt.checked ? 'true' : 'false');
+  }
   await window.store.updateSettings({
     storeName: form.storeName.value.trim(),
     storePhone: form.storePhone.value.trim(),
     storeAddress: form.storeAddress.value.trim(),
     paperSize: form.paperSize.value,
+    printerName: printerNameVal,
     taxRate: Number(form.taxRate.value) || 0,
     qrisMerchantName: form.qrisMerchantName.value.trim(),
     qrisNmid: form.qrisNmid.value.trim(),
@@ -312,7 +372,66 @@ async function handleSaveSettings(e) {
     cashierPin: form.cashierPin.value.trim()
   });
   window.renderApp();
-  window.store.showRealtimeToast("✅ Pengaturan toko berhasil disimpan!");
+  window.store.showRealtimeToast("✅ Pengaturan toko & printer berhasil disimpan!");
+}
+
+async function detectInstalledPrinters() {
+  const statusEl = document.getElementById('printer-detect-status');
+  const inputEl = document.getElementById('settings-printer-name');
+  if (statusEl) statusEl.innerHTML = '⏳ Memindai printer USB VSC TM-58D PRO yang terhubung...';
+  try {
+    const res = await window.store.apiFetch('/api/printers');
+    const data = await res.json();
+    if (res.ok && data) {
+      const printers = data.printers || [];
+      const rec = data.recommendedPrinter || '';
+      if (rec && inputEl) {
+        inputEl.value = rec;
+        localStorage.setItem('WARUNGKU_PRINTER_NAME', rec);
+      }
+      if (printers.length > 0) {
+        const badges = printers.map(p => {
+          const escaped = escapeHtml(p).replace(/'/g, "\\'");
+          return `<button type="button" onclick="document.getElementById('settings-printer-name').value='${escaped}'; localStorage.setItem('WARUNGKU_PRINTER_NAME','${escaped}');" class="px-2 py-0.5 rounded bg-emerald-100 dark:bg-emerald-900/50 text-emerald-800 dark:text-emerald-200 font-mono text-[10px] hover:bg-emerald-200 transition">${escapeHtml(p)}</button>`;
+        }).join(' ');
+        if (statusEl) {
+          statusEl.innerHTML = `✅ Printer USB terdeteksi (klik untuk memilih): ${badges}`;
+        }
+      } else {
+        if (statusEl) statusEl.innerHTML = '⚠️ Printer VSC TM-58D PRO belum terdeteksi di USB. Pastikan kabel USB terpasang & tombol power printer menyala.';
+      }
+    } else {
+      if (statusEl) statusEl.innerHTML = '⚠️ Gagal mengambil daftar printer dari server.';
+    }
+  } catch (err) {
+    if (statusEl) statusEl.innerHTML = '⚠️ Gagal menghubungi server printer.';
+  }
+}
+
+async function testThermalPrinterNow() {
+  const inputEl = document.getElementById('settings-printer-name');
+  if (inputEl && inputEl.value.trim()) {
+    localStorage.setItem('WARUNGKU_PRINTER_NAME', inputEl.value.trim());
+  }
+  const sampleTrx = {
+    id: 'TEST-' + String(Date.now()).slice(-6),
+    date: new Date().toISOString(),
+    cashier: window.store.cashierName || 'Kasir 1',
+    customerName: 'TEST PRINTER VSC TM-58D',
+    paymentMethod: 'Tunai',
+    items: [
+      { name: 'TEST CETAK VSC TM-58D PRO 58MM', qty: 1, sellPrice: 15000, subtotal: 15000 }
+    ],
+    subtotal: 15000,
+    discount: 0,
+    tax: 0,
+    total: 15000,
+    amountPaid: 20000,
+    change: 5000
+  };
+  if (typeof printThermalReceiptNow === 'function') {
+    await printThermalReceiptNow(sampleTrx);
+  }
 }
 
 function handleImportFile(e) {

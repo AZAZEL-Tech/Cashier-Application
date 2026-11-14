@@ -432,12 +432,18 @@ class DatabaseEngine:
             settings_map = self._get_raw_settings()
             secret_str = str(secret or "").strip()
             if role == "admin":
-                expected = str(settings_map.get("adminPassword", "admin123"))
+                expected = str(settings_map.get("adminPassword", "admin"))
+                if expected in ("admin", "admin123"):
+                    return hmac.compare_digest(secret_str, "admin") or hmac.compare_digest(secret_str, "admin123")
                 return hmac.compare_digest(secret_str, expected)
             elif role == "cashier":
                 expected_pin = str(settings_map.get("cashierPin", "1234"))
-                expected_admin = str(settings_map.get("adminPassword", "admin123"))
-                return hmac.compare_digest(secret_str, expected_pin) or hmac.compare_digest(secret_str, expected_admin)
+                expected_admin = str(settings_map.get("adminPassword", "admin"))
+                if expected_admin in ("admin", "admin123"):
+                    is_admin_match = hmac.compare_digest(secret_str, "admin") or hmac.compare_digest(secret_str, "admin123")
+                else:
+                    is_admin_match = hmac.compare_digest(secret_str, expected_admin)
+                return hmac.compare_digest(secret_str, expected_pin) or is_admin_match
             return False
 
     def get_all(self, include_secrets=False):

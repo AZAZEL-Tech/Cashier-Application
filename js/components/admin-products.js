@@ -58,6 +58,34 @@ function renderAdminProducts() {
       </div>
 
       ${productTab === 'list' ? `
+        <!-- Quick Barcode Scanner Registration Bar (Alfamart/Indomaret Backoffice Style) -->
+        <div class="bg-gradient-to-r from-indigo-950 via-slate-900 to-slate-900 text-white p-4 rounded-3xl border border-indigo-500/30 shadow-lg flex flex-col sm:flex-row items-center justify-between gap-3">
+          <div class="flex items-center space-x-3">
+            <div class="w-11 h-11 rounded-2xl bg-indigo-500/20 border border-indigo-400/40 flex items-center justify-center text-indigo-300 shrink-0">
+              <i data-lucide="scan-barcode" class="w-6 h-6"></i>
+            </div>
+            <div>
+              <div class="flex items-center space-x-2">
+                <span class="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-500/20 text-emerald-300 border border-emerald-400/40 uppercase">
+                  Scanner USB Aktif (ULT-1808)
+                </span>
+                <h4 class="font-bold text-xs sm:text-sm text-white">Input / Cari Produk via Tembak Barcode</h4>
+              </div>
+              <p class="text-[11px] text-slate-300 mt-0.5">
+                Tembak barcode produk dengan alat scanner kapan saja: jika belum terdaftar akan langsung membuka form <b>Tambah Produk Baru</b> otomatis!
+              </p>
+            </div>
+          </div>
+          <button 
+            type="button"
+            onclick="openProductModal()" 
+            class="px-4 py-2.5 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold text-xs flex items-center space-x-1.5 shadow-md transition shrink-0"
+          >
+            <i data-lucide="scan-line" class="w-4 h-4"></i>
+            <span>Scan / Input Produk Baru</span>
+          </button>
+        </div>
+
         <!-- Filters & Search -->
         <div class="bg-white dark:bg-slate-900 p-4 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col sm:flex-row gap-3">
           <div class="relative flex-1">
@@ -65,9 +93,10 @@ function renderAdminProducts() {
             <input 
               type="text" 
               id="admin-product-search"
-              placeholder="Cari nama barang atau barcode..."
+              placeholder="Cari nama barang atau tembak barcode di sini (Enter untuk tambah/edit)..."
               value="${escapeHtml(productSearchQuery)}"
               oninput="productSearchQuery = this.value; window.renderApp();"
+              onkeydown="handleAdminSearchBarcodeKey(event)"
               class="w-full pl-10 pr-4 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
             />
           </div>
@@ -259,10 +288,11 @@ function setAdminProductTab(tab) {
 }
 
 // Modal: Add or Edit Product
-function openProductModal(productId = null) {
+function openProductModal(productId = null, prefillBarcode = '') {
   const store = window.store;
   const isEdit = Boolean(productId);
   const p = isEdit ? store.products.find(item => item.id === productId) : null;
+  const initialBarcode = p ? p.barcode : (prefillBarcode || '');
 
   const container = document.getElementById('modal-container');
   if (!container) return;
@@ -273,36 +303,64 @@ function openProductModal(productId = null) {
         
         <div class="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
           <h3 class="font-bold text-base text-slate-800 dark:text-white flex items-center space-x-2">
-            <i data-lucide="${isEdit ? 'pencil' : 'plus-circle'}" class="w-5 h-5 text-indigo-600"></i>
-            <span>${isEdit ? 'Edit Produk' : 'Tambah Produk Baru'}</span>
+            <i data-lucide="${isEdit ? 'pencil' : 'scan-barcode'}" class="w-5 h-5 text-indigo-600"></i>
+            <span>${isEdit ? 'Edit Data Produk' : 'Tambah Produk (Siap Scan Barcode)'}</span>
           </h3>
           <button onclick="closeModal()" class="p-1.5 text-slate-400 hover:text-slate-600">
             <i data-lucide="x" class="w-5 h-5"></i>
           </button>
         </div>
 
-        <form onsubmit="handleSaveProduct(event, '${productId || ''}')" class="space-y-3.5 text-xs">
-          <div>
-            <label class="block font-semibold text-slate-600 dark:text-slate-300 mb-1">Nama Produk *</label>
-            <input 
-              type="text" 
-              name="name" 
-              required 
-              value="${p ? p.name : ''}"
-              placeholder="Contoh: Beras Rojolele 5kg"
-              class="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-800 dark:text-white font-medium focus:ring-2 focus:ring-indigo-500 focus:outline-none"
-            />
-          </div>
+        <form id="admin-product-form" onsubmit="handleSaveProduct(event, '${productId || ''}')" class="space-y-3.5 text-xs">
+          
+          <!-- BARCODE / SKU SCANNER FIELD (TOP PRIORITY) -->
+          <div class="p-3.5 rounded-2xl bg-indigo-50/70 dark:bg-indigo-950/30 border-2 border-indigo-400/60 dark:border-indigo-500/40 space-y-2">
+            <div class="flex items-center justify-between">
+              <label class="font-extrabold text-indigo-900 dark:text-indigo-200 flex items-center space-x-1.5">
+                <i data-lucide="scan-barcode" class="w-4 h-4 text-indigo-600 dark:text-indigo-400"></i>
+                <span>1. Scan Barcode Kemasan / Kode SKU *</span>
+              </label>
+              <button 
+                type="button" 
+                onclick="generateAutoSkuInModal()"
+                class="px-2 py-0.5 rounded-lg bg-white dark:bg-slate-800 border border-indigo-200 dark:border-indigo-700 text-[10px] font-bold text-indigo-600 dark:text-indigo-300 hover:bg-indigo-100 transition"
+                title="Gunakan jika barang curah / tidak punya barcode kemasan"
+              >
+                + Buat Kode Otomatis
+              </button>
+            </div>
 
-          <div class="grid grid-cols-2 gap-3">
-            <div>
-              <label class="block font-semibold text-slate-600 dark:text-slate-300 mb-1">Barcode / Kode SKU *</label>
+            <div class="relative">
               <input 
                 type="text" 
+                id="product-barcode-input"
                 name="barcode" 
                 required 
-                value="${p ? p.barcode : Math.floor(10000000 + Math.random() * 90000000)}"
-                class="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-800 dark:text-white font-mono font-medium focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                autocomplete="off"
+                value="${escapeHtml(initialBarcode)}"
+                placeholder="Tembak barcode produk dengan alat scanner ULT-1808..."
+                onkeydown="handleProductModalBarcodeKey(event, '${productId || ''}')"
+                class="w-full px-3.5 py-2.5 bg-white dark:bg-slate-900 border border-indigo-300 dark:border-indigo-700 rounded-xl text-slate-900 dark:text-white font-mono font-extrabold text-sm tracking-wider focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+              />
+            </div>
+
+            <div id="barcode-scan-status" class="text-[11px] font-semibold ${prefillBarcode ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-500 dark:text-slate-400'} flex items-center space-x-1">
+              <i data-lucide="${prefillBarcode ? 'check-circle-2' : 'zap'}" class="w-3.5 h-3.5"></i>
+              <span>${prefillBarcode ? `Barcode "${escapeHtml(prefillBarcode)}" berhasil di-scan! Silakan isi Nama & Harga di bawah.` : 'Arahkan scanner ke produk & tekan pelatuk (otomatis pindah ke Nama Produk).'}</span>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div class="sm:col-span-2">
+              <label class="block font-semibold text-slate-600 dark:text-slate-300 mb-1">2. Nama Produk *</label>
+              <input 
+                type="text" 
+                id="product-name-input"
+                name="name" 
+                required 
+                value="${p ? escapeHtml(p.name) : ''}"
+                placeholder="Contoh: Indomie Goreng 85g / Aqua 600ml"
+                class="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-800 dark:text-white font-bold focus:ring-2 focus:ring-indigo-500 focus:outline-none"
               />
             </div>
             <div>
@@ -320,22 +378,28 @@ function openProductModal(productId = null) {
 
           <div class="grid grid-cols-2 gap-3">
             <div>
-              <label class="block font-semibold text-slate-600 dark:text-slate-300 mb-1">Harga Modal / Beli (Rp) *</label>
+              <label class="block font-semibold text-slate-600 dark:text-slate-300 mb-1">3. Harga Modal / Beli (Rp) *</label>
               <input 
                 type="number" 
+                id="product-cost-input"
                 name="costPrice" 
                 required 
-                value="${p ? p.costPrice : 0}"
+                min="0"
+                value="${p ? p.costPrice : ''}"
+                placeholder="Contoh: 2800"
                 class="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-800 dark:text-white font-bold focus:ring-2 focus:ring-indigo-500 focus:outline-none"
               />
             </div>
             <div>
-              <label class="block font-semibold text-slate-600 dark:text-slate-300 mb-1">Harga Jual (Rp) *</label>
+              <label class="block font-semibold text-slate-600 dark:text-slate-300 mb-1">4. Harga Jual Kasir (Rp) *</label>
               <input 
                 type="number" 
+                id="product-sell-input"
                 name="sellPrice" 
                 required 
-                value="${p ? p.sellPrice : 0}"
+                min="0"
+                value="${p ? p.sellPrice : ''}"
+                placeholder="Contoh: 3500"
                 class="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-emerald-600 dark:text-emerald-400 font-bold focus:ring-2 focus:ring-indigo-500 focus:outline-none"
               />
             </div>
@@ -343,7 +407,7 @@ function openProductModal(productId = null) {
 
           <div class="grid grid-cols-3 gap-3">
             <div>
-              <label class="block font-semibold text-slate-600 dark:text-slate-300 mb-1">Stok *</label>
+              <label class="block font-semibold text-slate-600 dark:text-slate-300 mb-1">Stok Awal *</label>
               <input 
                 type="number" 
                 name="stock" 
@@ -366,7 +430,7 @@ function openProductModal(productId = null) {
               <input 
                 type="text" 
                 name="unit" 
-                value="${p ? p.unit : 'pcs'}"
+                value="${p ? escapeHtml(p.unit) : 'pcs'}"
                 placeholder="pcs, kg, bks"
                 class="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-800 dark:text-white font-medium focus:ring-2 focus:ring-indigo-500 focus:outline-none"
               />
@@ -378,7 +442,7 @@ function openProductModal(productId = null) {
             <input 
               type="text" 
               name="image" 
-              value="${p ? p.image : ''}"
+              value="${p ? escapeHtml(p.image) : ''}"
               placeholder="https://..."
               class="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-800 dark:text-white font-medium focus:ring-2 focus:ring-indigo-500 focus:outline-none"
             />
@@ -398,7 +462,111 @@ function openProductModal(productId = null) {
     </div>
   `;
 
-  lucide.createIcons();
+  if (typeof lucide !== 'undefined') lucide.createIcons();
+
+  // Focus appropriate field immediately
+  setTimeout(() => {
+    if (prefillBarcode || isEdit) {
+      const nameEl = document.getElementById('product-name-input');
+      if (nameEl) nameEl.focus();
+    } else {
+      const barcodeEl = document.getElementById('product-barcode-input');
+      if (barcodeEl) barcodeEl.focus();
+    }
+  }, 40);
+}
+
+function generateAutoSkuInModal() {
+  const barcodeEl = document.getElementById('product-barcode-input');
+  if (!barcodeEl) return;
+  const randomCode = 'SKU-' + String(Math.floor(100000 + Math.random() * 900000));
+  barcodeEl.value = randomCode;
+  const statusEl = document.getElementById('barcode-scan-status');
+  if (statusEl) {
+    statusEl.className = 'text-[11px] font-semibold text-indigo-600 dark:text-indigo-400 flex items-center space-x-1';
+    statusEl.innerHTML = `<span>✓ Kode SKU otomatis dibuat: <b>${randomCode}</b></span>`;
+  }
+  const nameEl = document.getElementById('product-name-input');
+  if (nameEl) nameEl.focus();
+}
+
+function handleProductModalBarcodeKey(e, currentProductId = '') {
+  if (e.key === 'Enter') {
+    // Prevent USB scanner's trailing Enter key from submitting the form prematurely!
+    e.preventDefault();
+    e.stopPropagation();
+    const scannedCode = e.target.value.trim();
+    if (!scannedCode) return;
+
+    if (window.store.settings.soundEnabled && typeof soundFx !== 'undefined') {
+      soundFx.playBeep();
+    }
+
+    // Check if this barcode already belongs to an existing product
+    const existing = window.store.products.find(
+      item => String(item.barcode || '').trim().toLowerCase() === scannedCode.toLowerCase() && item.id !== currentProductId
+    );
+    if (existing) {
+      if (confirm(`Barcode "${scannedCode}" sudah terdaftar untuk produk "${existing.name}".\n\nIngin membuka data produk "${existing.name}" untuk diedit?`)) {
+        openProductModal(existing.id);
+        return;
+      }
+    }
+
+    const statusEl = document.getElementById('barcode-scan-status');
+    if (statusEl) {
+      statusEl.className = 'text-[11px] font-bold text-emerald-600 dark:text-emerald-400 flex items-center space-x-1';
+      statusEl.innerHTML = `<span>✓ Barcode <b>${escapeHtml(scannedCode)}</b> berhasil terbaca! Silakan isi Nama Produk & Harga.</span>`;
+    }
+
+    const nameEl = document.getElementById('product-name-input');
+    if (nameEl) {
+      nameEl.focus();
+      nameEl.select();
+    }
+  }
+}
+
+function handleAdminSearchBarcodeKey(e) {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    const code = e.target.value.trim();
+    if (!code) return;
+    handleAdminBarcodeScanAction(code);
+  }
+}
+
+function handleAdminBarcodeScanAction(scannedBarcode) {
+  const cleanCode = String(scannedBarcode || '').trim();
+  if (!cleanCode) return;
+
+  // If Product Modal is already open, inject scanned barcode directly into #product-barcode-input!
+  const modalBarcodeInput = document.getElementById('product-barcode-input');
+  if (modalBarcodeInput) {
+    modalBarcodeInput.value = cleanCode;
+    handleProductModalBarcodeKey({ key: 'Enter', target: modalBarcodeInput, preventDefault: () => {}, stopPropagation: () => {} });
+    return;
+  }
+
+  // Otherwise check if product already exists in catalog
+  const existing = window.store.products.find(
+    p => String(p.barcode || '').trim().toLowerCase() === cleanCode.toLowerCase() ||
+         String(p.id || '').trim().toLowerCase() === cleanCode.toLowerCase()
+  );
+
+  if (existing) {
+    if (window.store.settings.soundEnabled && typeof soundFx !== 'undefined') soundFx.playBeep();
+    productSearchQuery = '';
+    window.renderApp();
+    openProductModal(existing.id);
+    window.store.showRealtimeToast(`📦 Barcode ditemukan: "${existing.name}"`);
+  } else {
+    if (window.store.settings.soundEnabled && typeof soundFx !== 'undefined') soundFx.playBeep();
+    productSearchQuery = '';
+    window.renderApp();
+    openProductModal(null, cleanCode);
+    window.store.showRealtimeToast(`✨ Barcode baru "${cleanCode}" terbaca! Silakan lengkapi Nama & Harga.`);
+  }
 }
 
 async function handleSaveProduct(e, id) {

@@ -5,54 +5,179 @@
 let activeCategory = 'all';
 let searchQuery = '';
 let isMobileCartOpen = false;
+let scanMultiplier = 1;
+window.lastScannedItem = null;
+let _searchDebounceTimer = null;
 
 function renderPOS() {
   const store = window.store;
   const calc = store.getCartCalculations();
+  const lastScan = window.lastScannedItem;
+  const lastScanInCart = lastScan ? store.cart.find(i => i.id === lastScan.id) : null;
   
   // Filter products by category and search
   const filteredProducts = store.products.filter(p => {
     const matchCat = activeCategory === 'all' || p.category === activeCategory;
-    const matchSearch = p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                        p.barcode.includes(searchQuery);
+    const q = searchQuery.toLowerCase().trim();
+    const matchSearch = !q || p.name.toLowerCase().includes(q) || (p.barcode && p.barcode.toLowerCase().includes(q));
     return matchCat && matchSearch;
   });
 
   return `
     <div class="max-w-7xl mx-auto px-2 sm:px-4 lg:px-8 py-3 pb-24 md:pb-6">
+      
+      <!-- ALFAMART / INDOMARET STYLE BARCODE SCANNER MONITOR BAR -->
+      <div class="mb-3 bg-gradient-to-r from-slate-900 via-slate-900 to-emerald-950 text-white rounded-3xl p-3.5 sm:p-4 shadow-xl border border-emerald-500/30">
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-3 items-center">
+          
+          <!-- Left: Laser Barcode Scanner Input & Multiplier (7 Cols) -->
+          <div class="lg:col-span-7 space-y-2">
+            <div class="flex items-center justify-between">
+              <div class="flex items-center space-x-2">
+                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-emerald-500/20 text-emerald-300 border border-emerald-400/40">
+                  <span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping mr-1.5"></span>
+                  Scanner Aktif (ULT-1808 USB Ready)
+                </span>
+                <span class="text-[11px] text-slate-300 hidden sm:inline">
+                  Tembak langsung barcode produk kapan saja (tanpa perlu klik kotak)
+                </span>
+              </div>
+              <span class="text-[10px] font-mono text-emerald-300 bg-white/10 px-2 py-0.5 rounded-lg">
+                Tips: Ketik <b>5*</b> lalu scan = 5 pcs
+              </span>
+            </div>
+
+            <div class="flex flex-col sm:flex-row gap-2">
+              <!-- Multiplier Qty Selector -->
+              <div class="flex items-center bg-slate-800/90 border border-slate-700 rounded-2xl px-2.5 py-1.5 shrink-0">
+                <span class="text-[10px] font-bold text-slate-400 uppercase mr-2">Qty Scan:</span>
+                <div class="flex items-center space-x-1">
+                  ${[1, 2, 5, 10].map(mult => `
+                    <button 
+                      type="button"
+                      onclick="setScanMultiplier(${mult})"
+                      class="px-2 py-1 rounded-lg text-xs font-extrabold font-mono transition ${
+                        scanMultiplier === mult 
+                          ? 'bg-emerald-500 text-slate-950 shadow-sm' 
+                          : 'bg-slate-700/70 text-slate-300 hover:bg-slate-700'
+                      }"
+                    >
+                      ${mult}x
+                    </button>
+                  `).join('')}
+                  <input 
+                    type="number" 
+                    min="1" 
+                    max="999"
+                    value="${scanMultiplier}"
+                    onchange="setScanMultiplier(this.value)"
+                    title="Jumlah barang per 1x tembak scan"
+                    class="w-12 text-center bg-slate-900 border border-slate-700 rounded-lg py-1 text-xs font-mono font-extrabold text-emerald-400 focus:outline-none focus:border-emerald-400"
+                  />
+                </div>
+              </div>
+
+              <!-- Main Barcode Gun Input -->
+              <div class="relative flex-1">
+                <i data-lucide="scan-barcode" class="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-emerald-400"></i>
+                <input 
+                  type="text" 
+                  id="pos-barcode-input"
+                  autocomplete="off"
+                  placeholder="Tembak Barcode dengan Alat Scanner / Ketik Kode SKU lalu Enter..."
+                  onkeydown="handleBarcodeKey(event)"
+                  class="w-full pl-11 pr-24 py-2.5 bg-slate-950/90 border-2 border-emerald-500/60 focus:border-emerald-400 rounded-2xl text-sm font-mono font-bold text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 shadow-inner"
+                />
+                <button 
+                  type="button"
+                  onclick="triggerManualBarcodeSubmit()"
+                  class="absolute right-1.5 top-1/2 -translate-y-1/2 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition flex items-center space-x-1"
+                >
+                  <span>Input</span>
+                  <i data-lucide="corner-down-left" class="w-3.5 h-3.5"></i>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Right: Alfamart/Indomaret Digital Cashier Display (Last Scanned Item) (5 Cols) -->
+          <div class="lg:col-span-5 bg-slate-950/90 border border-slate-800 rounded-2xl p-3 flex items-center justify-between min-h-[76px]">
+            ${lastScan && lastScanInCart ? `
+              <div class="min-w-0 flex-1 pr-3">
+                <div class="flex items-center space-x-1.5">
+                  <span class="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 font-mono text-[10px] font-bold">
+                    ✓ BARANG TERAKHIR DI-SCAN
+                  </span>
+                  <span class="text-[10px] font-mono text-slate-400">${escapeHtml(lastScan.barcode)}</span>
+                </div>
+                <div class="font-extrabold text-sm sm:text-base text-white truncate mt-0.5">
+                  ${escapeHtml(lastScan.name)}
+                </div>
+                <div class="text-xs text-slate-400 font-mono">
+                  ${formatRupiah(lastScan.sellPrice)} x <b class="text-emerald-400">${lastScanInCart.qty} ${escapeHtml(lastScan.unit || 'pcs')}</b>
+                </div>
+              </div>
+              <div class="text-right shrink-0">
+                <div class="text-[10px] text-slate-400 uppercase font-bold">Subtotal Item</div>
+                <div class="text-lg sm:text-xl font-black font-mono text-emerald-400">
+                  ${formatRupiah(lastScanInCart.subtotal)}
+                </div>
+              </div>
+            ` : `
+              <div class="w-full flex items-center justify-between text-slate-400 px-1">
+                <div class="flex items-center space-x-2.5">
+                  <div class="w-10 h-10 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-center text-emerald-400">
+                    <i data-lucide="scan-line" class="w-5 h-5"></i>
+                  </div>
+                  <div>
+                    <div class="text-xs font-bold text-slate-200">Siap Memindai Barang Belanjaan</div>
+                    <div class="text-[11px] text-slate-400">Arahkan alat scanner ke barcode kemasan produk</div>
+                  </div>
+                </div>
+                <div class="text-right hidden sm:block">
+                  <div class="text-[10px] font-mono text-slate-500">TOTAL TAGIHAN</div>
+                  <div class="text-base font-black font-mono text-emerald-400">${formatRupiah(calc.total)}</div>
+                </div>
+              </div>
+            `}
+          </div>
+
+        </div>
+      </div>
+
       <div class="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
         
         <!-- LEFT COLUMN: PRODUCT CATALOG (8 COLS) -->
         <div class="lg:col-span-7 xl:col-span-8 flex flex-col space-y-3">
           
-          <!-- Search Bar & Barcode Scanner Input -->
-          <div class="bg-white dark:bg-slate-900 p-3 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col sm:flex-row gap-2">
+          <!-- Search Bar & Camera Scanner Input -->
+          <div class="bg-white dark:bg-slate-900 p-2.5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col sm:flex-row gap-2">
             <div class="relative flex-1">
               <i data-lucide="search" class="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400"></i>
               <input 
                 type="text" 
                 id="pos-search-input"
-                placeholder="Cari nama barang atau scan barcode..."
-                value="${searchQuery}"
+                placeholder="Cari manual nama barang di katalog (atau tekan F2)..."
+                value="${escapeHtml(searchQuery)}"
                 oninput="handleSearchInput(this.value)"
                 onkeydown="handleBarcodeKey(event)"
-                class="w-full pl-10 pr-10 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 text-slate-800 dark:text-slate-100 placeholder-slate-400"
+                class="w-full pl-10 pr-10 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500 text-slate-800 dark:text-slate-100 placeholder-slate-400"
               />
               ${searchQuery ? `
                 <button onclick="clearSearch()" class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
                   <i data-lucide="x" class="w-4 h-4"></i>
                 </button>
               ` : `
-                <span title="Scan Barcode Ready" class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">
-                  <i data-lucide="scan-barcode" class="w-4 h-4"></i>
+                <span title="Cari Katalog" class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">
+                  <i data-lucide="filter" class="w-3.5 h-3.5"></i>
                 </span>
               `}
             </div>
 
             <!-- Fast Camera Barcode Scanner trigger -->
-            <button onclick="openCameraScannerModal()" class="px-3.5 py-2.5 bg-emerald-50 dark:bg-emerald-950/50 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 rounded-xl text-xs font-semibold flex items-center justify-center space-x-1.5 transition">
+            <button onclick="openCameraScannerModal()" class="px-3.5 py-2 bg-emerald-50 dark:bg-emerald-950/50 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 rounded-xl text-xs font-semibold flex items-center justify-center space-x-1.5 transition">
               <i data-lucide="camera" class="w-4 h-4"></i>
-              <span>Scan Kamera</span>
+              <span>Scan Kamera HP</span>
             </button>
           </div>
 
@@ -389,9 +514,20 @@ function setCategory(catId) {
   window.renderApp();
 }
 
+function setScanMultiplier(val) {
+  const num = Math.max(1, Math.min(999, parseInt(val, 10) || 1));
+  scanMultiplier = num;
+  window.renderApp();
+  const barcodeEl = document.getElementById('pos-barcode-input');
+  if (barcodeEl) barcodeEl.focus();
+}
+
 function handleSearchInput(val) {
   searchQuery = val;
-  window.renderApp();
+  if (_searchDebounceTimer) clearTimeout(_searchDebounceTimer);
+  _searchDebounceTimer = setTimeout(() => {
+    window.renderApp();
+  }, 120);
 }
 
 function clearSearch() {
@@ -399,41 +535,172 @@ function clearSearch() {
   window.renderApp();
 }
 
+function triggerManualBarcodeSubmit() {
+  const barcodeEl = document.getElementById('pos-barcode-input');
+  if (barcodeEl && barcodeEl.value.trim()) {
+    processPosBarcodeScan(barcodeEl.value.trim(), barcodeEl);
+  } else if (barcodeEl) {
+    barcodeEl.focus();
+  }
+}
+
 function handleBarcodeKey(e) {
   if (e.key === 'Enter') {
+    e.preventDefault();
+    e.stopPropagation();
     const val = e.target.value.trim();
     if (!val) return;
+    processPosBarcodeScan(val, e.target);
+  }
+}
 
-    // Search exact barcode or product ID
-    let match = window.store.products.find(p => p.barcode === val || p.id.toLowerCase() === val.toLowerCase());
-    // Fallback: if exactly 1 product matches name search, add it
-    if (!match) {
-      const nameMatches = window.store.products.filter(p => p.name.toLowerCase().includes(val.toLowerCase()) || p.barcode.includes(val));
-      if (nameMatches.length === 1) {
-        match = nameMatches[0];
-      }
+function processPosBarcodeScan(rawVal, inputEl = null) {
+  const clean = String(rawVal || '').trim();
+  if (!clean) return;
+
+  // Support Alfamart/Indomaret multiplier syntax: "5*" (set multiplier to 5) or "5*899..." (scan 5 pcs of 899...)
+  const multOnlyMatch = clean.match(/^(\d{1,3})[\*xX]$/);
+  if (multOnlyMatch) {
+    scanMultiplier = Math.max(1, parseInt(multOnlyMatch[1], 10));
+    if (inputEl) inputEl.value = '';
+    window.store.showRealtimeToast(`🔢 Multiplier diset ke ${scanMultiplier}x untuk scan berikutnya!`);
+    window.renderApp();
+    return;
+  }
+
+  let qtyToScan = scanMultiplier || 1;
+  let targetCode = clean;
+
+  const multWithCodeMatch = clean.match(/^(\d{1,3})[\*xX](.+)$/);
+  if (multWithCodeMatch) {
+    qtyToScan = Math.max(1, parseInt(multWithCodeMatch[1], 10));
+    targetCode = multWithCodeMatch[2].trim();
+  }
+
+  // 1. Exact Barcode or Product ID/SKU match
+  let match = window.store.products.find(
+    p => String(p.barcode || '').trim().toLowerCase() === targetCode.toLowerCase() ||
+         String(p.id || '').trim().toLowerCase() === targetCode.toLowerCase()
+  );
+
+  // 2. Fallback: if typed in search input and exactly 1 product matches name or partial barcode
+  if (!match && inputEl && inputEl.id === 'pos-search-input') {
+    const nameMatches = window.store.products.filter(
+      p => p.name.toLowerCase().includes(targetCode.toLowerCase()) ||
+           String(p.barcode || '').includes(targetCode)
+    );
+    if (nameMatches.length === 1) {
+      match = nameMatches[0];
     }
+  }
 
-    if (match) {
-      const res = window.store.addToCart(match.id, 1);
-      if (!res.success) {
-        alert(res.message);
-      } else {
-        searchQuery = '';
-        e.target.value = '';
-        window.renderApp();
-      }
+  if (match) {
+    const res = window.store.addToCart(match.id, qtyToScan);
+    if (!res.success) {
+      alert(res.message);
     } else {
-      if (window.store.settings.soundEnabled && typeof soundFx !== 'undefined') soundFx.playError();
-      window.store.showRealtimeToast(`⚠️ Barcode / produk "${escapeHtml(val)}" tidak ditemukan.`);
+      window.lastScannedItem = {
+        id: match.id,
+        name: match.name,
+        barcode: match.barcode,
+        sellPrice: match.sellPrice,
+        unit: match.unit || 'pcs',
+        addedQty: qtyToScan,
+        timestamp: Date.now()
+      };
+      scanMultiplier = 1;
+      searchQuery = '';
+      if (inputEl) inputEl.value = '';
+      window.renderApp();
+      window.store.showRealtimeToast(`✅ +${qtyToScan} ${match.name} (${formatRupiah(match.sellPrice * qtyToScan)})`);
+      setTimeout(() => {
+        const bInput = document.getElementById('pos-barcode-input');
+        if (bInput) {
+          bInput.value = '';
+          bInput.focus();
+        }
+      }, 20);
     }
+  } else {
+    if (window.store.settings.soundEnabled && typeof soundFx !== 'undefined') soundFx.playError();
+    if (inputEl) inputEl.value = '';
+    openUnregisteredBarcodeModal(targetCode);
+  }
+}
+
+function openUnregisteredBarcodeModal(scannedBarcode) {
+  const container = document.getElementById('modal-container');
+  if (!container) {
+    window.store.showRealtimeToast(`⚠️ Barcode "${escapeHtml(scannedBarcode)}" belum terdaftar!`);
+    return;
+  }
+
+  const isAdmin = window.store.currentRole === 'admin';
+  const safeCode = escapeHtml(scannedBarcode);
+
+  container.innerHTML = `
+    <div class="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
+      <div class="bg-white dark:bg-slate-900 rounded-3xl w-full max-w-md shadow-2xl border border-slate-200 dark:border-slate-800 p-6 space-y-4 animate-in zoom-in-95 duration-150 text-center">
+        <div class="w-14 h-14 rounded-2xl bg-amber-100 dark:bg-amber-950/70 text-amber-600 dark:text-amber-400 mx-auto flex items-center justify-center">
+          <i data-lucide="scan-barcode" class="w-7 h-7"></i>
+        </div>
+        <div>
+          <h3 class="font-bold text-base text-slate-900 dark:text-white">Barcode Belum Terdaftar di Katalog</h3>
+          <p class="text-xs text-slate-400 mt-1">Alat scanner berhasil membaca kode barcode produk berikut:</p>
+          <div class="mt-2.5 py-2.5 px-4 rounded-2xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-mono font-extrabold text-base text-emerald-600 dark:text-emerald-400 tracking-wider">
+            ${safeCode}
+          </div>
+        </div>
+        <p class="text-xs text-slate-500 dark:text-slate-400">
+          ${isAdmin 
+            ? 'Ingin langsung mendaftarkan produk baru dengan kode barcode ini?' 
+            : 'Produk dengan barcode ini belum diinput oleh Admin. Anda dapat mendaftarkannya sekarang (memerlukan akses Admin).'}
+        </p>
+        <div class="grid grid-cols-2 gap-2 pt-2">
+          <button type="button" onclick="closeModal()" class="py-2.5 px-4 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-bold text-xs hover:bg-slate-50">
+            Tutup (Esc)
+          </button>
+          <button type="button" onclick="registerProductFromScannedBarcode('${safeCode.replace(/'/g, "\\'")}')" class="py-2.5 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs shadow-lg shadow-indigo-600/20 flex items-center justify-center space-x-1.5">
+            <i data-lucide="plus-circle" class="w-4 h-4"></i>
+            <span>Daftarkan Produk</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  `;
+  if (typeof lucide !== 'undefined') lucide.createIcons();
+}
+
+function registerProductFromScannedBarcode(barcode) {
+  closeModal();
+  if (window.store.currentRole === 'admin') {
+    window.currentTab = 'admin-products';
+    window.renderApp();
+    openProductModal(null, barcode);
+  } else {
+    window._pendingRegisterBarcode = barcode;
+    openRoleSwitchModal();
   }
 }
 
 function handleProductClick(productId) {
-  const res = window.store.addToCart(productId, 1);
+  const qty = scanMultiplier || 1;
+  const prod = window.store.products.find(p => p.id === productId);
+  const res = window.store.addToCart(productId, qty);
   if (!res.success) {
     alert(res.message);
+  } else if (prod) {
+    window.lastScannedItem = {
+      id: prod.id,
+      name: prod.name,
+      barcode: prod.barcode,
+      sellPrice: prod.sellPrice,
+      unit: prod.unit || 'pcs',
+      addedQty: qty,
+      timestamp: Date.now()
+    };
+    scanMultiplier = 1;
+    window.renderApp();
   }
 }
 

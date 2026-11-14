@@ -407,24 +407,125 @@ async function submitCheckout() {
   }
 }
 
+// ==================== THERMAL RECEIPT HTML & ESC/POS ENGINE (VSC TM-58D PRO) ====================
+function buildReceiptInnerHtml(trx) {
+  if (!trx) return '';
+  const store = window.store;
+  const s = store?.settings || {};
+  const trxDate = trx.date || trx.createdAt || new Date().toISOString();
+  const trxCashier = trx.cashier || trx.cashierName || store?.cashierName || 'Kasir';
+  const items = Array.isArray(trx.items) ? trx.items : [];
+
+  return `
+    <div style="color:#000000;background:#ffffff;font-family:'Courier New',Consolas,monospace;font-size:11px;line-height:1.35;">
+      <div style="text-align:center;padding-bottom:6px;border-bottom:1px dashed #000000;">
+        <div style="font-weight:800;font-size:13px;text-transform:uppercase;">${escapeHtml(s.storeName || 'WarungKu POS')}</div>
+        <div style="font-size:10.5px;margin-top:2px;">${escapeHtml(s.storeAddress || '')}</div>
+        <div style="font-size:10.5px;">Telp/WA: ${escapeHtml(s.storePhone || '')}</div>
+      </div>
+
+      <div style="padding:6px 0;border-bottom:1px dashed #000000;font-size:10.5px;">
+        <div style="display:flex;justify-content:space-between;">
+          <span>No. Nota:</span>
+          <span style="font-weight:700;">${escapeHtml(trx.id || '-')}</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;">
+          <span>Tanggal:</span>
+          <span>${formatDateTime(trxDate)}</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;">
+          <span>Kasir:</span>
+          <span>${escapeHtml(trxCashier)}</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;">
+          <span>Pelanggan:</span>
+          <span>${escapeHtml(trx.customerName || 'Umum')}</span>
+        </div>
+      </div>
+
+      <div style="padding:6px 0;border-bottom:1px dashed #000000;font-size:10.5px;">
+        ${items.map(item => {
+          const unitPrice = item.sellPrice !== undefined ? item.sellPrice : (item.price || 0);
+          const lineSub = item.subtotal !== undefined ? item.subtotal : (Number(item.qty || 1) * Number(unitPrice));
+          return `
+            <div style="margin-bottom:3px;">
+              <div style="font-weight:700;">${escapeHtml(item.name || 'Produk')}</div>
+              <div style="display:flex;justify-content:space-between;padding-left:4px;">
+                <span>${item.qty || 1} x ${formatRupiah(unitPrice)}</span>
+                <span style="font-weight:700;">${formatRupiah(lineSub)}</span>
+              </div>
+            </div>
+          `;
+        }).join('')}
+      </div>
+
+      <div style="padding:6px 0;border-bottom:1px dashed #000000;font-size:10.5px;">
+        <div style="display:flex;justify-content:space-between;">
+          <span>Subtotal:</span>
+          <span>${formatRupiah(trx.subtotal || 0)}</span>
+        </div>
+        ${Number(trx.discount || 0) > 0 ? `
+          <div style="display:flex;justify-content:space-between;">
+            <span>Diskon:</span>
+            <span>-${formatRupiah(trx.discount)}</span>
+          </div>
+        ` : ''}
+        ${Number(trx.tax || 0) > 0 ? `
+          <div style="display:flex;justify-content:space-between;">
+            <span>PPN:</span>
+            <span>${formatRupiah(trx.tax)}</span>
+          </div>
+        ` : ''}
+        <div style="display:flex;justify-content:space-between;font-weight:800;font-size:12px;padding-top:3px;margin-top:2px;border-top:1px solid #000000;">
+          <span>TOTAL:</span>
+          <span>${formatRupiah(trx.total || 0)}</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;padding-top:2px;">
+          <span>Metode:</span>
+          <span style="text-transform:uppercase;font-weight:700;">${escapeHtml(trx.paymentMethod || 'TUNAI')}</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;">
+          <span>Bayar:</span>
+          <span>${formatRupiah(trx.amountPaid !== undefined ? trx.amountPaid : (trx.total || 0))}</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-weight:800;">
+          <span>Kembali:</span>
+          <span>${formatRupiah(trx.change || 0)}</span>
+        </div>
+      </div>
+
+      <div style="padding-top:6px;text-align:center;font-size:10px;white-space:pre-line;">
+        ${escapeHtml(s.receiptFooter || 'Terima kasih atas kunjungan Anda!')}
+      </div>
+    </div>
+  `;
+}
+
 // ==================== PAYMENT SUCCESS & PRINT OPTION MODAL ====================
 function openPaymentSuccessModal(trx) {
   lastCompletedTransaction = trx;
+  const store = window.store;
+  currentReceiptWidth = store?.settings?.paperSize || '58mm';
+  const autoPrint = localStorage.getItem('pos_auto_print') === 'true';
+
+  // Immediately populate #pos-print-area so 1-click print works right away
+  preparePrintArea(trx);
+
   const container = document.getElementById('modal-container');
   if (!container) return;
 
   container.innerHTML = `
-    <div class="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
-      <div class="bg-white dark:bg-slate-900 rounded-3xl w-full max-w-sm shadow-2xl border border-slate-200 dark:border-slate-800 p-6 space-y-4 animate-in zoom-in-95 duration-150">
+    <div class="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+      <div class="bg-white dark:bg-slate-900 rounded-3xl w-full max-w-md shadow-2xl border border-slate-200 dark:border-slate-800 p-6 space-y-4 animate-in zoom-in-95 duration-150">
         
         <!-- Success Icon -->
-        <div class="text-center space-y-2">
-          <div class="w-16 h-16 rounded-3xl bg-emerald-100 dark:bg-emerald-950 text-emerald-600 dark:text-emerald-400 mx-auto flex items-center justify-center shadow-lg shadow-emerald-500/20">
-            <i data-lucide="check-circle-2" class="w-9 h-9"></i>
+        <div class="text-center space-y-1.5">
+          <div class="w-14 h-14 rounded-3xl bg-emerald-100 dark:bg-emerald-950 text-emerald-600 dark:text-emerald-400 mx-auto flex items-center justify-center shadow-lg shadow-emerald-500/20">
+            <i data-lucide="check-circle-2" class="w-8 h-8"></i>
           </div>
           <div>
             <h3 class="font-extrabold text-xl text-slate-800 dark:text-white">Pembayaran Berhasil!</h3>
-            <p class="text-xs text-slate-400 font-mono mt-0.5">${trx.id}</p>
+            <p class="text-xs text-slate-400 font-mono mt-0.5">${escapeHtml(trx.id)}</p>
           </div>
         </div>
 
@@ -435,7 +536,7 @@ function openPaymentSuccessModal(trx) {
             <span class="font-bold text-slate-800 dark:text-slate-200 text-sm font-mono">${formatRupiah(trx.total)}</span>
           </div>
           <div class="flex justify-between items-center text-slate-500 dark:text-slate-400">
-            <span>Uang Diterima (${trx.paymentMethod.toUpperCase()}):</span>
+            <span>Uang Diterima (${escapeHtml(trx.paymentMethod.toUpperCase())}):</span>
             <span class="font-bold text-slate-800 dark:text-slate-200 text-sm font-mono">${formatRupiah(trx.amountPaid)}</span>
           </div>
           <div class="pt-2 border-t border-dashed border-slate-200 dark:border-slate-700 flex justify-between items-center">
@@ -444,48 +545,101 @@ function openPaymentSuccessModal(trx) {
           </div>
         </div>
 
-        <!-- Pertanyaan Cetak Struk -->
-        <div class="text-center pt-1">
-          <p class="text-xs font-semibold text-slate-700 dark:text-slate-200">
-            Apakah Anda ingin mencetak struk belanja?
-          </p>
+        <!-- VSC TM-58D PRO Thermal Printer Actions -->
+        <div class="space-y-2 pt-1">
+          <button 
+            type="button"
+            onclick="printThermalReceiptNow()"
+            class="w-full py-3.5 px-4 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs sm:text-sm flex items-center justify-center space-x-2 shadow-lg shadow-emerald-600/30 transition active:scale-95"
+          >
+            <i data-lucide="printer" class="w-5 h-5"></i>
+            <span>Cetak Struk Sekarang (VSC TM-58D 58mm)</span>
+          </button>
+
+          <div class="grid grid-cols-3 gap-2">
+            <button 
+              type="button"
+              onclick="printReceipt()"
+              class="py-2.5 px-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-[11px] flex items-center justify-center space-x-1 transition"
+              title="Cetak via Dialog Browser (Ctrl+P)"
+            >
+              <i data-lucide="file-text" class="w-3.5 h-3.5"></i>
+              <span>Dialog Print</span>
+            </button>
+
+            <button 
+              type="button"
+              onclick="printReceiptBluetooth()"
+              class="py-2.5 px-2 rounded-xl bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 font-bold text-[11px] flex items-center justify-center space-x-1 transition"
+              title="Cetak via Bluetooth ke VSC TM-58D PRO"
+            >
+              <i data-lucide="bluetooth" class="w-3.5 h-3.5"></i>
+              <span>Cetak BT</span>
+            </button>
+
+            <button 
+              type="button"
+              onclick="openReceiptModal(lastCompletedTransaction)"
+              class="py-2.5 px-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-[11px] flex items-center justify-center space-x-1 transition"
+            >
+              <i data-lucide="eye" class="w-3.5 h-3.5"></i>
+              <span>Lihat Nota</span>
+            </button>
+          </div>
         </div>
 
-        <!-- Pilihan 2 Tombol: Tidak Perlu vs Cetak Struk -->
-        <div class="grid grid-cols-2 gap-2.5 pt-1">
-          <!-- Tombol 1: Tidak Perlu Cetak -->
+        <!-- Toggle Auto-Print Saat Pembayaran Selesai -->
+        <div class="pt-1 flex items-center justify-between px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/70 dark:border-slate-800 text-[11px]">
+          <label class="flex items-center space-x-2 cursor-pointer text-slate-600 dark:text-slate-300 font-semibold">
+            <input 
+              type="checkbox" 
+              ${autoPrint ? 'checked' : ''} 
+              onchange="toggleAutoPrintSetting(this.checked)"
+              class="rounded text-emerald-600 focus:ring-emerald-500"
+            />
+            <span>Otomatis cetak struk setiap selesai bayar</span>
+          </label>
+          <span class="text-[10px] font-mono text-emerald-600 dark:text-emerald-400 font-bold">58mm</span>
+        </div>
+
+        <!-- Bottom Close & WhatsApp -->
+        <div class="grid grid-cols-2 gap-2 pt-1">
           <button 
+            type="button"
+            onclick="shareReceiptWhatsApp()"
+            class="py-2.5 px-3 rounded-xl border border-emerald-200 dark:border-emerald-800 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 text-xs font-bold flex items-center justify-center space-x-1.5 transition"
+          >
+            <i data-lucide="send" class="w-3.5 h-3.5"></i>
+            <span>Kirim WhatsApp</span>
+          </button>
+
+          <button 
+            type="button"
             onclick="closeModal();"
-            class="py-3.5 px-3 rounded-2xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-xs flex items-center justify-center space-x-1.5 transition active:scale-95"
+            class="py-2.5 px-3 rounded-xl bg-slate-900 dark:bg-slate-700 hover:bg-slate-800 text-white font-bold text-xs flex items-center justify-center space-x-1.5 transition"
           >
-            <i data-lucide="x" class="w-4 h-4 text-slate-400"></i>
-            <span>Tidak Perlu</span>
-          </button>
-
-          <!-- Tombol 2: Cetak Struk -->
-          <button 
-            onclick="openReceiptModal(lastCompletedTransaction)"
-            class="py-3.5 px-3 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center space-x-1.5 shadow-lg shadow-emerald-600/30 transition active:scale-95"
-          >
-            <i data-lucide="printer" class="w-4 h-4"></i>
-            <span>Cetak Struk</span>
+            <span>Transaksi Baru</span>
+            <i data-lucide="arrow-right" class="w-3.5 h-3.5"></i>
           </button>
         </div>
-
-        <!-- Opsi WhatsApp Cepat -->
-        <button 
-          onclick="shareReceiptWhatsApp()"
-          class="w-full py-2 rounded-xl text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 text-xs font-semibold flex items-center justify-center space-x-1.5 transition"
-        >
-          <i data-lucide="send" class="w-3.5 h-3.5"></i>
-          <span>Kirim Struk ke WhatsApp</span>
-        </button>
 
       </div>
     </div>
   `;
 
-  lucide.createIcons();
+  if (typeof lucide !== 'undefined') lucide.createIcons();
+
+  // Trigger auto-print if enabled
+  if (autoPrint) {
+    setTimeout(() => {
+      printThermalReceiptNow();
+    }, 250);
+  }
+}
+
+function toggleAutoPrintSetting(enabled) {
+  localStorage.setItem('pos_auto_print', enabled ? 'true' : 'false');
+  window.store.showRealtimeToast(enabled ? '🖨️ Auto-Print Struk diaktifkan!' : 'Auto-Print Struk dinonaktifkan.');
 }
 
 // ==================== RECEIPT MODAL ====================
@@ -502,6 +656,8 @@ function openReceiptModal(trx) {
   lastCompletedTransaction = trx;
   const store = window.store;
   currentReceiptWidth = store?.settings?.paperSize || '58mm';
+  preparePrintArea(trx);
+
   const container = document.getElementById('modal-container');
   if (!container) return;
 
@@ -513,7 +669,10 @@ function openReceiptModal(trx) {
         <div class="px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
           <div class="flex items-center space-x-2">
             <i data-lucide="receipt" class="w-5 h-5 text-emerald-600"></i>
-            <h3 class="font-bold text-base text-slate-800 dark:text-white">Struk Pembayaran</h3>
+            <div>
+              <h3 class="font-bold text-base text-slate-800 dark:text-white">Struk Pembayaran (VSC TM-58D PRO)</h3>
+              <p class="text-[10px] text-slate-400">Ukuran Kertas Thermal: ${currentReceiptWidth}</p>
+            </div>
           </div>
           <button onclick="closeModal()" class="p-1.5 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
             <i data-lucide="x" class="w-5 h-5"></i>
@@ -521,110 +680,48 @@ function openReceiptModal(trx) {
         </div>
 
         <!-- Receipt Content Wrapper -->
-        <div class="p-6 space-y-4 max-h-[70vh] overflow-y-auto bg-slate-50 dark:bg-slate-950/50">
+        <div class="p-6 space-y-4 max-h-[65vh] overflow-y-auto bg-slate-50 dark:bg-slate-950/50">
           
           <!-- Thermal Paper Struk Card -->
-          <div id="printable-receipt" class="bg-white text-slate-900 p-4 rounded-xl border border-slate-200 shadow-sm font-receipt text-xs ${currentReceiptWidth === '80mm' ? 'print-width-80mm' : ''}">
-            
-            <div class="text-center pb-3 border-b border-dashed border-slate-300">
-              <h2 class="font-bold text-sm uppercase tracking-wide">${store.settings.storeName}</h2>
-              <p class="text-[11px] text-slate-600 mt-0.5">${store.settings.storeAddress}</p>
-              <p class="text-[11px] text-slate-600">Telp/WA: ${store.settings.storePhone}</p>
-            </div>
-
-            <div class="py-2.5 border-b border-dashed border-slate-300 space-y-1 text-[11px]">
-              <div class="flex justify-between">
-                <span>No. Nota:</span>
-                <span class="font-bold">${trx.id}</span>
-              </div>
-              <div class="flex justify-between">
-                <span>Tanggal:</span>
-                <span>${formatDateTime(trx.date)}</span>
-              </div>
-              <div class="flex justify-between">
-                <span>Kasir:</span>
-                <span>${trx.cashier}</span>
-              </div>
-              <div class="flex justify-between">
-                <span>Pelanggan:</span>
-                <span>${trx.customerName || 'Umum'}</span>
-              </div>
-            </div>
-
-            <!-- Items -->
-            <div class="py-2.5 border-b border-dashed border-slate-300 space-y-1.5 text-[11px]">
-              ${trx.items.map(item => `
-                <div>
-                  <div class="font-medium">${item.name}</div>
-                  <div class="flex justify-between text-slate-600 pl-2">
-                    <span>${item.qty} x ${formatRupiah(item.sellPrice)}</span>
-                    <span class="font-semibold text-slate-900">${formatRupiah(item.subtotal)}</span>
-                  </div>
-                </div>
-              `).join('')}
-            </div>
-
-            <!-- Totals -->
-            <div class="py-2.5 border-b border-dashed border-slate-300 space-y-1 text-[11px]">
-              <div class="flex justify-between">
-                <span>Subtotal:</span>
-                <span>${formatRupiah(trx.subtotal)}</span>
-              </div>
-              ${trx.discount > 0 ? `
-                <div class="flex justify-between text-rose-600">
-                  <span>Diskon:</span>
-                  <span>-${formatRupiah(trx.discount)}</span>
-                </div>
-              ` : ''}
-              ${trx.tax > 0 ? `
-                <div class="flex justify-between">
-                  <span>PPN:</span>
-                  <span>${formatRupiah(trx.tax)}</span>
-                </div>
-              ` : ''}
-              <div class="flex justify-between font-bold text-xs pt-1 border-t border-slate-200">
-                <span>TOTAL:</span>
-                <span>${formatRupiah(trx.total)}</span>
-              </div>
-              <div class="flex justify-between pt-1">
-                <span>Metode:</span>
-                <span class="uppercase font-semibold">${trx.paymentMethod}</span>
-              </div>
-              <div class="flex justify-between">
-                <span>Bayar:</span>
-                <span>${formatRupiah(trx.amountPaid)}</span>
-              </div>
-              <div class="flex justify-between font-semibold">
-                <span>Kembali:</span>
-                <span>${formatRupiah(trx.change)}</span>
-              </div>
-            </div>
-
-            <!-- Footer -->
-            <div class="pt-3 text-center text-[10px] text-slate-500 whitespace-pre-line">
-              ${store.settings.receiptFooter}
-            </div>
+          <div id="printable-receipt" class="bg-white text-slate-900 p-4 rounded-xl border border-slate-200 shadow-sm font-receipt text-xs mx-auto ${currentReceiptWidth === '80mm' ? 'print-width-80mm max-w-[300px]' : 'max-w-[240px]'}">
+            ${buildReceiptInnerHtml(trx)}
           </div>
 
         </div>
 
         <!-- Action Buttons -->
         <div class="p-4 border-t border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 space-y-2">
-          <div class="grid grid-cols-2 gap-2">
+          <button 
+            onclick="printThermalReceiptNow()"
+            class="w-full py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs flex items-center justify-center space-x-1.5 shadow-md shadow-emerald-600/20 transition"
+          >
+            <i data-lucide="printer" class="w-4 h-4"></i>
+            <span>Cetak Langsung ke VSC TM-58D (USB ESC/POS)</span>
+          </button>
+
+          <div class="grid grid-cols-3 gap-2">
             <button 
               onclick="printReceipt()"
-              class="py-3 px-4 rounded-xl bg-slate-900 dark:bg-slate-700 hover:bg-slate-800 text-white font-bold text-xs flex items-center justify-center space-x-1.5 transition"
+              class="py-2.5 px-3 rounded-xl bg-slate-900 dark:bg-slate-700 hover:bg-slate-800 text-white font-bold text-[11px] flex items-center justify-center space-x-1 transition"
             >
-              <i data-lucide="printer" class="w-4 h-4"></i>
-              <span>Cetak Struk (Print)</span>
+              <i data-lucide="file-text" class="w-3.5 h-3.5"></i>
+              <span>Print Browser</span>
+            </button>
+
+            <button 
+              onclick="printReceiptBluetooth()"
+              class="py-2.5 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-[11px] flex items-center justify-center space-x-1 transition"
+            >
+              <i data-lucide="bluetooth" class="w-3.5 h-3.5"></i>
+              <span>Print Bluetooth</span>
             </button>
 
             <button 
               onclick="shareReceiptWhatsApp()"
-              class="py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center space-x-1.5 transition"
+              class="py-2.5 px-3 rounded-xl bg-teal-600 hover:bg-teal-500 text-white font-bold text-[11px] flex items-center justify-center space-x-1 transition"
             >
-              <i data-lucide="send" class="w-4 h-4"></i>
-              <span>Kirim WhatsApp</span>
+              <i data-lucide="send" class="w-3.5 h-3.5"></i>
+              <span>WhatsApp</span>
             </button>
           </div>
 
@@ -641,29 +738,169 @@ function openReceiptModal(trx) {
     </div>
   `;
 
-  lucide.createIcons();
+  if (typeof lucide !== 'undefined') lucide.createIcons();
 }
 
-function preparePrintArea() {
-  const receiptEl = document.getElementById('printable-receipt');
+function preparePrintArea(trx = null) {
+  const targetTrx = trx || lastCompletedTransaction;
+  const store = window.store;
+  const widthMode = store?.settings?.paperSize || '58mm';
+
   let printArea = document.getElementById('pos-print-area');
   if (!printArea) {
     printArea = document.createElement('div');
     printArea.id = 'pos-print-area';
     document.body.appendChild(printArea);
   }
+
+  const receiptEl = document.getElementById('printable-receipt');
   if (receiptEl) {
     printArea.innerHTML = receiptEl.innerHTML;
-    printArea.className = receiptEl.className;
+    printArea.className = widthMode === '80mm' ? 'print-width-80mm' : '';
+  } else if (targetTrx) {
+    printArea.innerHTML = buildReceiptInnerHtml(targetTrx);
+    printArea.className = widthMode === '80mm' ? 'print-width-80mm' : '';
   }
 }
 
 function printReceipt() {
-  preparePrintArea();
+  preparePrintArea(lastCompletedTransaction);
   window.print();
 }
 
-window.addEventListener('beforeprint', preparePrintArea);
+async function printThermalReceiptNow(customTrx = null) {
+  const trx = customTrx || lastCompletedTransaction;
+  if (!trx) return;
+  preparePrintArea(trx);
+
+  const store = window.store;
+  try {
+    const res = await store.apiFetch('/api/print', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        transaction: trx,
+        printerName: store.settings.printerName || ''
+      })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok && data.success) {
+      store.showRealtimeToast(`🖨️ Struk berhasil dicetak ke ${data.printerName}!`);
+      return;
+    }
+    // Fallback to browser thermal print dialog if direct raw spooler isn't configured or returns error
+    window.print();
+  } catch (e) {
+    window.print();
+  }
+}
+
+async function printReceiptBluetooth(customTrx = null) {
+  const trx = customTrx || lastCompletedTransaction;
+  if (!trx) return;
+
+  if (!navigator.bluetooth) {
+    alert('Browser ini tidak mendukung Web Bluetooth. Gunakan Google Chrome / Microsoft Edge atau tombol Cetak USB.');
+    return;
+  }
+
+  try {
+    const store = window.store;
+    // Standard BLE Thermal Printer Services (used by VSC TM-58D PRO, RPP02N, MTP-II)
+    const device = await navigator.bluetooth.requestDevice({
+      acceptAllDevices: true,
+      optionalServices: [
+        '000018f0-0000-1000-8000-00805f9b34fb',
+        'e7810a71-73ae-499d-8c15-faa9aef0c3f2',
+        '49535343-fe7d-4ae5-8fa9-9fafd205e455'
+      ]
+    });
+
+    const server = await device.gatt.connect();
+    const services = await server.getPrimaryServices();
+    let writeChar = null;
+
+    for (const srv of services) {
+      const chars = await srv.getCharacteristics();
+      for (const ch of chars) {
+        if (ch.properties.write || ch.properties.writeWithoutResponse) {
+          writeChar = ch;
+          break;
+        }
+      }
+      if (writeChar) break;
+    }
+
+    if (!writeChar) {
+      throw new Error('Karakteristik tulis Bluetooth pada printer tidak ditemukan.');
+    }
+
+    const escposBytes = buildClientEscPosBytes(trx, store.settings);
+    // Send in 100-byte chunks for BLE buffer compatibility
+    const chunkSize = 100;
+    for (let i = 0; i < escposBytes.length; i += chunkSize) {
+      const chunk = escposBytes.slice(i, i + chunkSize);
+      if (writeChar.properties.writeWithoutResponse) {
+        await writeChar.writeValueWithoutResponse(chunk);
+      } else {
+        await writeChar.writeValue(chunk);
+      }
+      await new Promise(r => setTimeout(r, 25));
+    }
+
+    store.showRealtimeToast(`🖨️ Struk berhasil dicetak via Bluetooth (${device.name || 'VSC TM-58D'})!`);
+  } catch (err) {
+    if (err && err.name !== 'NotFoundError') {
+      alert('Gagal mencetak via Bluetooth: ' + (err.message || err));
+    }
+  }
+}
+
+function buildClientEscPosBytes(trx, settings = {}) {
+  const width = 32;
+  const sep = '-'.repeat(width);
+  const padLR = (l, r) => {
+    const ls = String(l || '');
+    const rs = String(r || '');
+    const maxL = Math.max(1, width - rs.length - 1);
+    const cleanL = ls.length > maxL ? ls.slice(0, maxL) : ls;
+    return cleanL + ' '.repeat(Math.max(1, width - cleanL.length - rs.length)) + rs;
+  };
+
+  let text = '';
+  text += '\x1B\x40'; // Init
+  text += '\x1B\x61\x01'; // Center
+  text += '\x1B\x45\x01' + String(settings.storeName || 'WARUNGKU POS').toUpperCase() + '\x1B\x45\x00\n';
+  if (settings.storeAddress) text += settings.storeAddress + '\n';
+  if (settings.storePhone) text += 'Telp: ' + settings.storePhone + '\n';
+  text += sep + '\n';
+  text += '\x1B\x61\x00'; // Left
+  text += padLR('Nota:', trx.id) + '\n';
+  text += padLR('Tgl :', formatDateTime(trx.date)) + '\n';
+  text += padLR('Kasir:', trx.cashier) + '\n';
+  text += sep + '\n';
+
+  (trx.items || []).forEach(item => {
+    text += String(item.name || '').slice(0, width) + '\n';
+    text += padLR(`  ${item.qty} x ${formatRupiah(item.sellPrice)}`, formatRupiah(item.subtotal)) + '\n';
+  });
+
+  text += sep + '\n';
+  text += padLR('Subtotal', formatRupiah(trx.subtotal)) + '\n';
+  if (trx.discount > 0) text += padLR('Diskon', '-' + formatRupiah(trx.discount)) + '\n';
+  if (trx.tax > 0) text += padLR('PPN', formatRupiah(trx.tax)) + '\n';
+  text += '\x1B\x45\x01' + padLR('TOTAL', formatRupiah(trx.total)) + '\x1B\x45\x00\n';
+  text += padLR(`Bayar (${String(trx.paymentMethod || 'CASH').toUpperCase()})`, formatRupiah(trx.amountPaid)) + '\n';
+  text += padLR('Kembali', formatRupiah(trx.change)) + '\n';
+  text += sep + '\n';
+  text += '\x1B\x61\x01';
+  text += String(settings.receiptFooter || 'Terima kasih!') + '\n\n\n\n';
+
+  const encoder = new TextEncoder();
+  return encoder.encode(text);
+}
+
+window.addEventListener('beforeprint', () => preparePrintArea(lastCompletedTransaction));
 
 function shareReceiptWhatsApp() {
   if (!lastCompletedTransaction) return;
@@ -776,7 +1013,14 @@ async function submitRoleSwitch(targetRole) {
   const res = await store.login(targetRole, val, cashierName);
   if (res.success) {
     closeModal();
-    window.navigate(targetRole === 'admin' ? 'admin-dashboard' : 'pos');
+    if (targetRole === 'admin' && window._pendingRegisterBarcode) {
+      const pendingCode = window._pendingRegisterBarcode;
+      window._pendingRegisterBarcode = null;
+      window.navigate('admin-products');
+      openProductModal(null, pendingCode);
+    } else {
+      window.navigate(targetRole === 'admin' ? 'admin-dashboard' : 'pos');
+    }
   } else {
     if (store.settings.soundEnabled && typeof soundFx !== 'undefined') soundFx.playError();
     alert(res.message || (targetRole === 'admin' ? 'Password admin salah!' : 'PIN kasir salah!'));

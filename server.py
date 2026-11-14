@@ -19,6 +19,7 @@ import secrets
 from urllib.parse import urlparse, parse_qs
 
 from db_adapter import DatabaseEngine
+from escpos_printer import build_escpos_receipt, list_windows_printers, send_raw_to_windows_printer
 
 PORT = 3000
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -228,6 +229,14 @@ class RealtimePOSHandler(http.server.SimpleHTTPRequestHandler):
             self.send_json(db.get_all())
             return
 
+        # 3. REST API: Get Installed Windows Thermal Printers
+        if path == "/api/printers":
+            sess = self._require_auth(allowed_roles=("cashier", "admin"), query_params=query)
+            if not sess:
+                return
+            self.send_json(list_windows_printers())
+            return
+
         # Prevent direct download of database/config files via static file handler
         if path.startswith("/data/") or path.endswith((".py", ".sqlite", ".db", ".sql")):
             self.send_json({"error": "Forbidden"}, status=403)
@@ -300,6 +309,26 @@ class RealtimePOSHandler(http.server.SimpleHTTPRequestHandler):
                 "fullData": updated_data
             })
             self.send_json({"success": True, "transaction": payload, "data": updated_data})
+            return
+
+        # 1B. Direct ESC/POS Thermal Receipt Print (Accessible by Cashier & Admin)
+        if path == "/api/print":
+            sess = self._require_auth(allowed_roles=("cashier", "admin"))
+            if not sess:
+                return
+            trx = payload.get("transaction") or payload
+            printer_name = (payload.get("printerName") or "").strip() or None
+            state = db.get_all()
+            settings = state.get("settings", {})
+            if not printer_name:
+                printer_name = (settings.get("printerName") or "").strip() or None
+            paper_size = settings.get("paperSize", "58mm")
+            try:
+                raw_bytes = build_escpos_receipt(trx, settings=settings, paper_size=paper_size)
+                result = send_raw_to_windows_printer(printer_name, raw_bytes)
+                self.send_json(result)
+            except Exception as e:
+                self.send_json({"success": False, "error": str(e)}, status=400)
             return
 
         # All endpoints below require ADMIN role
@@ -477,35 +506,68 @@ class RealtimePOSHandler(http.server.SimpleHTTPRequestHandler):
 
         self.send_json({"error": "Endpoint not found"}, status=404)
 
+def _cleanup_stale_port_listeners(port):
+    """Ensure no stale zombie process is holding the port on Windows before binding."""
+    if os.name != "nt":
+        return
+    try:
+        import subprocess
+        out = subprocess.check_output(["netstat", "-ano"], text=True, errors="ignore")
+        my_pid = str(os.getpid())
+        pids_to_kill = set()
+        for line in out.splitlines():
+            if f":{port} " in line and "LISTENING" in line:
+                parts = line.split()
+                if parts:
+                    pid = parts[-1]
+                    if pid.isdigit() and pid != "0" and pid != my_pid:
+                        pids_to_kill.add(pid)
+        for pid in pids_to_kill:
+            subprocess.run(["taskkill", "/F", "/PID", pid], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        if pids_to_kill:
+            time.sleep(0.5)
+    except Exception:
+        pass
+
+
+class ThreadingHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
+    daemon_threads = True
+    allow_reuse_address = (os.name != "nt")
+
+
 def main():
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
+    _cleanup_stale_port_listeners(PORT)
     local_ip = get_ip()
 
-    print("=" * 65)
-    print("  🚀 WARUNGKU POS - REALTIME BACKEND SERVER BERHASIL AKTIF! 🚀")
-    print("=" * 65)
-    db_name = "MySQL / MariaDB" if db.driver_type == "mysql" else "SQLite Relational Database"
-    print(f"🗄️  Database Engine : {db_name}")
-    print(f"📄  Schema SQL      : schema.sql (Bisa diimpor ke phpMyAdmin)")
-    print(f"⚙️  Konfigurasi DB  : db_config.json")
-    print("-" * 65)
-    print(f"💻 Buka di PC / Laptop Ini (Admin / Kasir):")
-    print(f"   👉 http://localhost:{PORT}")
-    print(f"\n📱 Buka di HP Android / iPhone (Kasir / Admin Realtime):")
-    print(f"   👉 http://{local_ip}:{PORT}")
-    print("-" * 65)
-    print("⚡ Sinkronisasi Realtime (SSE):")
-    print(f"   Setiap transaksi di Kasir HP langsung update stok, laba,")
-    print(f"   dan omset di PC Admin secara LIVE tanpa perlu refresh!")
-    print("=" * 65)
-    print("Tekan Ctrl + C untuk menghentikan server.\n")
+    with ThreadingHTTPServer(("0.0.0.0", PORT), RealtimePOSHandler) as httpd:
+        print("=" * 65, flush=True)
+        print("  🚀 WARUNGKU POS - REALTIME BACKEND SERVER BERHASIL AKTIF! 🚀", flush=True)
+        print("=" * 65, flush=True)
+        db_name = "MySQL / MariaDB" if db.driver_type == "mysql" else "SQLite Relational Database"
+        print(f"🗄️  Database Engine : {db_name}", flush=True)
+        print(f"📄  Schema SQL      : schema.sql (Bisa diimpor ke phpMyAdmin)", flush=True)
+        print(f"⚙️  Konfigurasi DB  : db_config.json", flush=True)
+        print("-" * 65, flush=True)
+        print(f"💻 Buka di PC / Laptop Ini (Admin / Kasir):", flush=True)
+        print(f"   👉 http://localhost:{PORT}", flush=True)
+        print(f"   👉 http://127.0.0.1:{PORT}", flush=True)
+        print(f"\n📱 Buka di HP Android / iPhone / PC Lain (Wi-Fi Sama):", flush=True)
+        print(f"   👉 http://{local_ip}:{PORT}", flush=True)
+        print("-" * 65, flush=True)
+        print("⚡ Sinkronisasi Realtime (SSE):", flush=True)
+        print(f"   Setiap transaksi di Kasir HP langsung update stok, laba,", flush=True)
+        print(f"   dan omset di PC Admin secara LIVE tanpa perlu refresh!", flush=True)
+        print("=" * 65, flush=True)
+        print("Tekan Ctrl + C untuk menghentikan server.\n", flush=True)
 
-    socketserver.ThreadingTCPServer.allow_reuse_address = True
-    with socketserver.ThreadingTCPServer(("", PORT), RealtimePOSHandler) as httpd:
+        if "--no-browser" not in sys.argv:
+            threading.Timer(0.8, lambda: webbrowser.open(f"http://127.0.0.1:{PORT}")).start()
+
         try:
             httpd.serve_forever()
         except KeyboardInterrupt:
-            print("\nServer dihentikan.")
+            print("\nServer dihentikan.", flush=True)
             sys.exit(0)
 
 if __name__ == '__main__':

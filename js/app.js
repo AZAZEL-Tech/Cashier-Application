@@ -141,7 +141,7 @@ function renderLoginPage() {
 
           <div class="pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-[11px] text-slate-400">
             <span class="flex items-center"><i data-lucide="shield-check" class="w-3.5 h-3.5 mr-1 text-emerald-500"></i> Server-Side RBAC Auth</span>
-            <span>${isCashierTab ? 'Default PIN: 1234' : 'Default Pass: admin123'}</span>
+            <span>${isCashierTab ? 'PIN Default: 1234' : 'Pass Default: admin / admin123'}</span>
           </div>
         </div>
       </div>
@@ -261,10 +261,21 @@ function renderApp() {
   }
 }
 
-// Global Keyboard Shortcuts for Pro Cashiers (PC / Laptop)
+// ==================== GLOBAL USB BARCODE SCANNER ENGINE (ULT-1808 / HID WEDGE) ====================
+// Menangkap tembakan alat scanner barcode USB secara otomatis di halaman Kasir POS maupun Admin Produk,
+// bahkan ketika kursor sedang tidak berada di dalam kotak input (mirip mesin kasir Alfamart / Indomaret).
+let _globalScanBuffer = '';
+let _globalScanLastTime = 0;
+let _inputBurstBuffer = '';
+let _inputBurstLastTime = 0;
+
 document.addEventListener('keydown', (e) => {
-  // Ignore if typing inside input / textarea
-  const isInput = ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName);
+  if (!window.store || !window.store.isAuthenticated) return;
+
+  const activeEl = document.activeElement;
+  const tag = activeEl ? activeEl.tagName : '';
+  const isTextInput = ['INPUT', 'TEXTAREA', 'SELECT'].includes(tag);
+  const activeId = activeEl ? activeEl.id : '';
 
   // Esc closes modal
   if (e.key === 'Escape') {
@@ -272,14 +283,15 @@ document.addEventListener('keydown', (e) => {
     return;
   }
 
-  // F2: Focus Search
+  // F2: Focus Barcode / Search Input
   if (e.key === 'F2') {
     e.preventDefault();
-    const searchInput = document.getElementById('pos-search-input');
-    if (searchInput) {
-      searchInput.focus();
-      searchInput.select();
+    const barcodeInput = document.getElementById('pos-barcode-input') || document.getElementById('pos-search-input');
+    if (barcodeInput) {
+      barcodeInput.focus();
+      barcodeInput.select();
     }
+    return;
   }
 
   // F8: Fast Checkout (if cart not empty)
@@ -288,6 +300,7 @@ document.addEventListener('keydown', (e) => {
     if (window.store.cart.length > 0) {
       openCheckoutModal();
     }
+    return;
   }
 
   // F4: Hold Order
@@ -296,8 +309,103 @@ document.addEventListener('keydown', (e) => {
     if (window.store.cart.length > 0) {
       promptHoldCart();
     }
+    return;
   }
-});
+
+  // Dedicated barcode inputs already have their own Enter handlers
+  const isDedicatedBarcodeInput = [
+    'pos-barcode-input',
+    'pos-search-input',
+    'product-barcode-input',
+    'admin-product-search'
+  ].includes(activeId);
+
+  if (isDedicatedBarcodeInput) {
+    _globalScanBuffer = '';
+    return;
+  }
+
+  const now = Date.now();
+
+  // Case A: User is focused inside another input inside the Add/Edit Product Modal (e.g., Nama Produk),
+  // and shoots the USB barcode gun (rapid burst < 45ms per char followed by Enter).
+  if (isTextInput) {
+    const insideProductModal = document.getElementById('admin-product-form') && document.getElementById('admin-product-form').contains(activeEl);
+    if (insideProductModal) {
+      if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
+        if (now - _inputBurstLastTime > 60) {
+          _inputBurstBuffer = '';
+        }
+        _inputBurstBuffer += e.key;
+        _inputBurstLastTime = now;
+      } else if (e.key === 'Enter' && _inputBurstBuffer.length >= 6 && (now - _inputBurstLastTime) < 80) {
+        // Intercept rapid barcode scanner burst that landed in another field!
+        e.preventDefault();
+        e.stopPropagation();
+        const scanned = _inputBurstBuffer;
+        _inputBurstBuffer = '';
+        if (activeEl && typeof activeEl.value === 'string' && activeEl.value.endsWith(scanned)) {
+          activeEl.value = activeEl.value.slice(0, activeEl.value.length - scanned.length);
+        }
+        if (typeof handleAdminBarcodeScanAction === 'function') {
+          handleAdminBarcodeScanAction(scanned);
+        }
+      }
+    }
+    return;
+  }
+
+  // Case B: No text input is focused — capture barcode scanner keystrokes globally!
+  if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
+    // Reset buffer if gap is > 350ms (unless previous buffer is a multiplier like "5*")
+    if (now - _globalScanLastTime > 350 && !/^\d{1,3}[\*xX]$/.test(_globalScanBuffer)) {
+      _globalScanBuffer = '';
+    }
+    _globalScanBuffer += e.key;
+    _globalScanLastTime = now;
+
+    // Reflect live typing into #pos-barcode-input if on POS screen and no modal is open
+    const modalContainer = document.getElementById('modal-container');
+    const isModalOpen = modalContainer && modalContainer.innerHTML.trim() !== '';
+    if (!isModalOpen && window.currentTab === 'pos') {
+      const posBarcodeEl = document.getElementById('pos-barcode-input');
+      if (posBarcodeEl) {
+        posBarcodeEl.value = _globalScanBuffer;
+      }
+    }
+    return;
+  }
+
+  if (e.key === 'Backspace' && _globalScanBuffer.length > 0) {
+    _globalScanBuffer = _globalScanBuffer.slice(0, -1);
+    return;
+  }
+
+  if (e.key === 'Enter' && _globalScanBuffer.trim().length >= 2) {
+    e.preventDefault();
+    e.stopPropagation();
+    const scannedCode = _globalScanBuffer.trim();
+    _globalScanBuffer = '';
+
+    // Route the scanned barcode based on active modal / screen
+    const productModalBarcodeEl = document.getElementById('product-barcode-input');
+    if (productModalBarcodeEl && typeof handleAdminBarcodeScanAction === 'function') {
+      handleAdminBarcodeScanAction(scannedCode);
+      return;
+    }
+
+    if (window.currentTab === 'admin-products' && typeof handleAdminBarcodeScanAction === 'function') {
+      handleAdminBarcodeScanAction(scannedCode);
+      return;
+    }
+
+    if (window.currentTab === 'pos' && typeof processPosBarcodeScan === 'function') {
+      const posBarcodeEl = document.getElementById('pos-barcode-input');
+      processPosBarcodeScan(scannedCode, posBarcodeEl);
+      return;
+    }
+  }
+}, true);
 
 // Initialize on DOM Ready
 document.addEventListener('DOMContentLoaded', () => {

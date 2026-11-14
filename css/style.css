@@ -79,10 +79,9 @@ body {
 }
 
 @media print {
-  /* Set zero margins for thermal printer rolls */
+  /* Set zero margins for VSC TM-58D PRO thermal printer */
   @page {
-    margin: 0 !important;
-    size: auto !important;
+    margin: 0mm;
   }
 
   html, body {
@@ -90,52 +89,50 @@ body {
     color: #000000 !important;
     margin: 0 !important;
     padding: 0 !important;
+    width: 100% !important;
     height: auto !important;
     min-height: 0 !important;
     overflow: visible !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
   }
 
   /* Completely remove main app UI & modal wrappers from print layout */
   #app-root,
   #modal-container,
+  #pos-live-toast,
   .no-print {
     display: none !important;
-    visibility: hidden !important;
-    height: 0 !important;
-    max-height: 0 !important;
-    overflow: hidden !important;
   }
 
-  /* Display ONLY the dedicated single-page print container */
+  /* Display ONLY the dedicated single-page print container (48mm printable area on 58mm VSC TM-58D PRO) */
   #pos-print-area {
     display: block !important;
     visibility: visible !important;
     position: static !important;
-    margin: 0 auto 0 0 !important;
-    padding: 2mm 3mm !important;
+    margin: 0 !important;
+    padding: 1.5mm 2mm 4mm 2mm !important;
     background: #ffffff !important;
     color: #000000 !important;
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace !important;
+    font-family: "Courier New", Consolas, "Liberation Mono", monospace !important;
     font-size: 11px !important;
+    font-weight: 600 !important;
     line-height: 1.35 !important;
     box-shadow: none !important;
     border: none !important;
-    width: 58mm !important;
-    max-width: 58mm !important;
-    page-break-after: avoid !important;
-    page-break-inside: avoid !important;
-    break-after: avoid !important;
-    break-inside: avoid !important;
+    width: 52mm !important;
+    max-width: 52mm !important;
   }
 
   #pos-print-area.print-width-80mm {
-    width: 80mm !important;
-    max-width: 80mm !important;
-    font-size: 13px !important;
+    width: 72mm !important;
+    max-width: 72mm !important;
+    font-size: 12px !important;
   }
 
   #pos-print-area * {
     visibility: visible !important;
     color: #000000 !important;
+    border-color: #000000 !important;
   }
 }

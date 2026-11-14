@@ -9,8 +9,7 @@ const DEFAULT_SETTINGS = {
   receiptFooter: "Terima kasih atas kunjungan Anda!\nBarang yang sudah dibeli tidak dapat ditukar.",
   currency: "Rp",
   taxRate: 0, // persentase PPN jika ada
-  adminPassword: "admin", // default password admin
-  cashierPin: "1234", // default PIN kasir
+  hasAuth: true,
   qrisNmid: "ID1020304050607",
   qrisMerchantName: "WARUNG BERKAH JAYA",
   bankName: "BCA",
