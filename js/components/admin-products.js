@@ -95,7 +95,7 @@ function renderAdminProducts() {
               id="admin-product-search"
               placeholder="Cari nama barang atau tembak barcode di sini (Enter untuk tambah/edit)..."
               value="${escapeHtml(productSearchQuery)}"
-              oninput="productSearchQuery = this.value; window.renderApp();"
+              oninput="productSearchQuery = this.value; window.debouncedRenderApp();"
               onkeydown="handleAdminSearchBarcodeKey(event)"
               class="w-full pl-10 pr-4 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
             />
@@ -107,7 +107,7 @@ function renderAdminProducts() {
           >
             <option value="all">Semua Kategori</option>
             ${store.categories.filter(c => c.id !== 'all').map(c => `
-              <option value="${c.id}" ${productCategoryFilter === c.id ? 'selected' : ''}>${c.name}</option>
+              <option value="${escapeHtml(c.id)}" ${productCategoryFilter === c.id ? 'selected' : ''}>${escapeHtml(c.name)}</option>
             `).join('')}
           </select>
         </div>
@@ -138,20 +138,20 @@ function renderAdminProducts() {
                     <tr class="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition">
                       <td class="py-3 px-4 flex items-center space-x-3">
                         <img 
-                          src="${p.image}" 
-                          alt="${p.name}" 
+                          src="${escapeHtml(p.image)}" 
+                          alt="${escapeHtml(p.name)}" 
                           onerror="this.src='https://images.unsplash.com/photo-1542838132-92c53300491e?w=400&auto=format&fit=crop&q=60'"
                           class="w-10 h-10 rounded-xl object-cover border border-slate-200 dark:border-slate-700 shrink-0" 
                         />
                         <div>
-                          <div class="font-bold text-slate-900 dark:text-white">${p.name}</div>
-                          <div class="text-[10px] text-slate-400">Satuan: ${p.unit || 'pcs'}</div>
+                          <div class="font-bold text-slate-900 dark:text-white">${escapeHtml(p.name)}</div>
+                          <div class="text-[10px] text-slate-400">Satuan: ${escapeHtml(p.unit || 'pcs')}</div>
                         </div>
                       </td>
-                      <td class="py-3 px-4 font-mono font-medium text-slate-500">${p.barcode}</td>
+                      <td class="py-3 px-4 font-mono font-medium text-slate-500">${escapeHtml(p.barcode)}</td>
                       <td class="py-3 px-4">
                         <span class="px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-semibold text-[11px] capitalize">
-                          ${p.category}
+                          ${escapeHtml(p.category)}
                         </span>
                       </td>
                       <td class="py-3 px-4 text-right font-mono text-slate-500">${formatRupiah(p.costPrice)}</td>
@@ -167,27 +167,27 @@ function renderAdminProducts() {
                               ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300' 
                               : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
                         }">
-                          ${p.stock} ${p.unit}
+                          ${p.stock} ${escapeHtml(p.unit)}
                         </span>
                       </td>
                       <td class="py-3 px-4 text-center">
                         <div class="flex items-center justify-center space-x-1.5">
                           <button 
-                            onclick="openRestockModal('${p.id}')" 
+                            onclick="openRestockModal('${escapeHtml(p.id)}')" 
                             title="Restock Barang Masuk / Keluar"
                             class="p-1.5 rounded-lg bg-amber-50 text-amber-600 dark:bg-amber-950/50 hover:bg-amber-100 transition"
                           >
                             <i data-lucide="arrow-left-right" class="w-4 h-4"></i>
                           </button>
                           <button 
-                            onclick="openProductModal('${p.id}')" 
+                            onclick="openProductModal('${escapeHtml(p.id)}')" 
                             title="Edit Data Produk"
                             class="p-1.5 rounded-lg bg-indigo-50 text-indigo-600 dark:bg-indigo-950/50 hover:bg-indigo-100 transition"
                           >
                             <i data-lucide="pencil" class="w-4 h-4"></i>
                           </button>
                           <button 
-                            onclick="confirmDeleteProduct('${p.id}', '${p.name.replace(/'/g, "\\'")}')" 
+                            onclick="confirmDeleteProduct('${escapeHtml(p.id)}')" 
                             title="Hapus Produk"
                             class="p-1.5 rounded-lg bg-rose-50 text-rose-600 dark:bg-rose-950/50 hover:bg-rose-100 transition"
                           >
@@ -250,7 +250,7 @@ function renderAdminProducts() {
                 ${store.stockHistory.length > 0 ? store.stockHistory.map(item => `
                   <tr class="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition">
                     <td class="py-3 px-4 font-mono text-slate-500">${formatDateTime(item.date)}</td>
-                    <td class="py-3 px-4 font-bold text-slate-900 dark:text-white">${item.productName}</td>
+                    <td class="py-3 px-4 font-bold text-slate-900 dark:text-white">${escapeHtml(item.productName)}</td>
                     <td class="py-3 px-4">
                       <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold ${
                         item.type === 'in' 
@@ -264,8 +264,8 @@ function renderAdminProducts() {
                     <td class="py-3 px-4 text-center font-bold font-mono">
                       ${item.type === 'in' ? '+' : '-'}${item.qty}
                     </td>
-                    <td class="py-3 px-4 text-slate-600 dark:text-slate-300">${item.reason}</td>
-                    <td class="py-3 px-4 text-slate-400">${item.user || 'Admin'}</td>
+                    <td class="py-3 px-4 text-slate-600 dark:text-slate-300">${escapeHtml(item.reason)}</td>
+                    <td class="py-3 px-4 text-slate-400">${escapeHtml(item.user || 'Admin')}</td>
                   </tr>
                 `).join('') : `
                   <tr>
@@ -591,7 +591,9 @@ async function handleSaveProduct(e, id) {
   window.store.showRealtimeToast(`✅ Produk "${productData.name}" berhasil disimpan!`);
 }
 
-async function confirmDeleteProduct(id, name) {
+async function confirmDeleteProduct(id) {
+  const prod = (window.store.products || []).find(item => item.id === id);
+  const name = prod ? prod.name : id;
   if (confirm(`Apakah Anda yakin ingin menghapus produk "${name}"?`)) {
     await window.store.deleteProduct(id);
     window.renderApp();

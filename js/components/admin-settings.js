@@ -214,7 +214,7 @@ function renderAdminSettings() {
               >${escapeHtml(s.receiptFooter)}</textarea>
             </div>
 
-            <div class="sm:col-span-2 pt-1">
+            <div class="sm:col-span-2 pt-1 space-y-2">
               <label class="inline-flex items-center space-x-2.5 cursor-pointer">
                 <input 
                   type="checkbox" 
@@ -224,6 +224,33 @@ function renderAdminSettings() {
                 />
                 <span class="font-semibold text-slate-700 dark:text-slate-200">Aktifkan Efek Suara Kasir (Beep Scan & Notifikasi Pembayaran)</span>
               </label>
+
+              <div class="p-3.5 rounded-2xl bg-indigo-50/70 dark:bg-indigo-950/40 border border-indigo-200/80 dark:border-indigo-800/60 space-y-2">
+                <div class="flex items-center justify-between">
+                  <label class="inline-flex items-center space-x-2.5 cursor-pointer">
+                    <input 
+                      type="checkbox" 
+                      name="autoCloseEnabled" 
+                      ${s.autoCloseEnabled !== false ? 'checked' : ''}
+                      class="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500"
+                    />
+                    <span class="font-bold text-slate-800 dark:text-white">Otomatis Tutup Buku Toko Setiap Hari</span>
+                  </label>
+                  <span class="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300 font-bold">
+                    Roll-Up: 7 Hari → 4 Minggu → 12 Bulan
+                  </span>
+                </div>
+                <div class="flex items-center space-x-3 text-xs">
+                  <span class="text-slate-600 dark:text-slate-300 font-medium">Jam Tutup Toko Harian:</span>
+                  <input 
+                    type="time" 
+                    name="storeCloseTime" 
+                    value="${escapeHtml(s.storeCloseTime || '22:00')}"
+                    class="px-3 py-1.5 bg-white dark:bg-slate-900 border border-indigo-300 dark:border-indigo-700 rounded-xl text-slate-900 dark:text-white font-mono font-bold focus:outline-none"
+                  />
+                  <span class="text-[11px] text-slate-400">Server akan otomatis membukukan laporan harian & menyatukannya menjadi mingguan/bulanan/tahunan.</span>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -368,6 +395,8 @@ async function handleSaveSettings(e) {
     bankAccountHolder: form.bankAccountHolder.value.trim(),
     receiptFooter: form.receiptFooter.value.trim(),
     soundEnabled: Boolean(form.soundEnabled.checked),
+    autoCloseEnabled: Boolean(form.autoCloseEnabled.checked),
+    storeCloseTime: (form.storeCloseTime ? form.storeCloseTime.value.trim() : '22:00') || '22:00',
     adminPassword: form.adminPassword.value.trim(),
     cashierPin: form.cashierPin.value.trim()
   });
@@ -415,7 +444,7 @@ async function testThermalPrinterNow() {
   }
   const sampleTrx = {
     id: 'TEST-' + String(Date.now()).slice(-6),
-    date: new Date().toISOString(),
+    date: getLocalISOString(),
     cashier: window.store.cashierName || 'Kasir 1',
     customerName: 'TEST PRINTER VSC TM-58D',
     paymentMethod: 'Tunai',
@@ -439,7 +468,7 @@ function handleImportFile(e) {
   if (!file) return;
 
   const reader = new FileReader();
-  reader.onload = async function(evt) {
+  reader.onload = async function (evt) {
     const result = await window.store.importBackupJSON(evt.target.result);
     alert(result.message);
     if (result.success) {

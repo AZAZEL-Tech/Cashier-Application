@@ -111,7 +111,7 @@ function renderAdminDiscounts() {
             id="admin-discount-search"
             placeholder="Cari nama promo atau kode voucher..."
             value="${escapeHtml(discountSearchQuery)}"
-            oninput="discountSearchQuery = this.value; window.renderApp();"
+            oninput="discountSearchQuery = this.value; window.debouncedRenderApp();"
             class="w-full pl-10 pr-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-pink-500"
           />
         </div>
@@ -161,8 +161,8 @@ function renderAdminDiscounts() {
                         <i data-lucide="${d.type === 'percentage' ? 'percent' : 'banknote'}" class="w-5 h-5"></i>
                       </div>
                       <div>
-                        <p class="font-bold text-slate-900 dark:text-white text-xs">${d.name}</p>
-                        <p class="text-[10px] text-slate-400 font-mono">ID: ${d.id}</p>
+                        <p class="font-bold text-slate-900 dark:text-white text-xs">${escapeHtml(d.name)}</p>
+                        <p class="text-[10px] text-slate-400 font-mono">ID: ${escapeHtml(d.id)}</p>
                       </div>
                     </div>
                   </td>
@@ -170,7 +170,7 @@ function renderAdminDiscounts() {
                     ${d.code ? `
                       <span class="inline-flex items-center px-2 py-1 rounded-lg bg-pink-50 dark:bg-pink-950/60 text-pink-700 dark:text-pink-300 font-bold border border-pink-200 dark:border-pink-800/60">
                         <i data-lucide="tag" class="w-3 h-3 mr-1"></i>
-                        ${d.code}
+                        ${escapeHtml(d.code)}
                       </span>
                     ` : `
                       <span class="text-slate-400 italic text-[11px]">(Tanpa Kode)</span>
@@ -222,14 +222,14 @@ function renderAdminDiscounts() {
                   <td class="py-3.5 px-4 text-center">
                     <div class="flex items-center justify-center space-x-1.5">
                       <button 
-                        onclick="openDiscountModal('${d.id}')"
+                        onclick="openDiscountModal('${escapeHtml(d.id)}')"
                         class="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-indigo-600 dark:text-indigo-400 transition"
                         title="Edit Diskon"
                       >
                         <i data-lucide="pencil" class="w-4 h-4"></i>
                       </button>
                       <button 
-                        onclick="promptDeleteDiscount('${d.id}', '${d.name.replace(/'/g, "\\'")}')"
+                        onclick="promptDeleteDiscount('${escapeHtml(d.id)}')"
                         class="p-1.5 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950 text-rose-600 transition"
                         title="Hapus Diskon"
                       >
@@ -303,7 +303,7 @@ function openDiscountModal(discountId = null) {
               type="text" 
               name="name" 
               required 
-              value="${d ? d.name : ''}"
+              value="${d ? escapeHtml(d.name) : ''}"
               placeholder="Contoh: Promo Weekend 10% atau Potongan Belanja Rp 5.000"
               class="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-800 dark:text-white font-medium focus:ring-2 focus:ring-pink-500 focus:outline-none"
             />
@@ -315,7 +315,7 @@ function openDiscountModal(discountId = null) {
               <input 
                 type="text" 
                 name="code" 
-                value="${d ? (d.code || '') : ''}"
+                value="${d ? escapeHtml(d.code || '') : ''}"
                 placeholder="Contoh: HEMAT10"
                 style="text-transform: uppercase;"
                 class="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-800 dark:text-white font-mono font-bold focus:ring-2 focus:ring-pink-500 focus:outline-none"
@@ -457,9 +457,11 @@ async function handleToggleDiscount(discountId) {
   window.renderApp();
 }
 
-function promptDeleteDiscount(discountId, discountName) {
+function promptDeleteDiscount(discountId) {
   const container = document.getElementById('modal-container');
   if (!container) return;
+  const discObj = (window.store.discounts || []).find(item => item.id === discountId);
+  const discountName = discObj ? discObj.name : discountId;
 
   container.innerHTML = `
     <div class="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
@@ -472,7 +474,7 @@ function promptDeleteDiscount(discountId, discountName) {
         <div>
           <h3 class="font-bold text-base text-slate-800 dark:text-white">Hapus Promo Ini?</h3>
           <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">
-            Apakah Anda yakin ingin menghapus promo <strong>"${discountName}"</strong>? Diskon ini tidak akan bisa digunakan lagi oleh kasir.
+            Apakah Anda yakin ingin menghapus promo <strong>"${escapeHtml(discountName)}"</strong>? Diskon ini tidak akan bisa digunakan lagi oleh kasir.
           </p>
         </div>
 
@@ -486,7 +488,7 @@ function promptDeleteDiscount(discountId, discountName) {
           </button>
           <button 
             type="button" 
-            onclick="confirmDeleteDiscount('${discountId}')" 
+            onclick="confirmDeleteDiscount('${escapeHtml(discountId)}')" 
             class="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs shadow-lg shadow-rose-600/20"
           >
             Ya, Hapus

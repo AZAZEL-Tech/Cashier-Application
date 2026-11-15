@@ -81,19 +81,17 @@ function renderLoginPage() {
         <div class="p-6 space-y-5">
           <!-- Role Selector Tabs -->
           <div class="grid grid-cols-2 gap-2 p-1 bg-slate-100 dark:bg-slate-800 rounded-2xl">
-            <button type="button" onclick="selectLoginRole('cashier')" class="py-2.5 px-3 rounded-xl text-xs font-bold flex items-center justify-center space-x-1.5 transition ${
-              isCashierTab
-                ? 'bg-white dark:bg-slate-900 text-emerald-600 dark:text-emerald-400 shadow-sm'
-                : 'text-slate-500 dark:text-slate-400 hover:text-slate-800'
-            }">
+            <button type="button" onclick="selectLoginRole('cashier')" class="py-2.5 px-3 rounded-xl text-xs font-bold flex items-center justify-center space-x-1.5 transition ${isCashierTab
+      ? 'bg-white dark:bg-slate-900 text-emerald-600 dark:text-emerald-400 shadow-sm'
+      : 'text-slate-500 dark:text-slate-400 hover:text-slate-800'
+    }">
               <i data-lucide="shopping-cart" class="w-4 h-4"></i>
               <span>Kasir POS</span>
             </button>
-            <button type="button" onclick="selectLoginRole('admin')" class="py-2.5 px-3 rounded-xl text-xs font-bold flex items-center justify-center space-x-1.5 transition ${
-              !isCashierTab
-                ? 'bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-sm'
-                : 'text-slate-500 dark:text-slate-400 hover:text-slate-800'
-            }">
+            <button type="button" onclick="selectLoginRole('admin')" class="py-2.5 px-3 rounded-xl text-xs font-bold flex items-center justify-center space-x-1.5 transition ${!isCashierTab
+      ? 'bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-sm'
+      : 'text-slate-500 dark:text-slate-400 hover:text-slate-800'
+    }">
               <i data-lucide="shield" class="w-4 h-4"></i>
               <span>Admin Backoffice</span>
             </button>
@@ -129,11 +127,10 @@ function renderLoginPage() {
               </div>
             ` : ''}
 
-            <button type="submit" ${window.isLoggingIn ? 'disabled' : ''} class="w-full py-3.5 rounded-xl font-bold text-sm text-white shadow-lg transition flex items-center justify-center space-x-2 ${
-              isCashierTab
-                ? 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-500/25'
-                : 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-500/25'
-            } disabled:opacity-60">
+            <button type="submit" ${window.isLoggingIn ? 'disabled' : ''} class="w-full py-3.5 rounded-xl font-bold text-sm text-white shadow-lg transition flex items-center justify-center space-x-2 ${isCashierTab
+      ? 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-500/25'
+      : 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-500/25'
+    } disabled:opacity-60">
               <i data-lucide="${window.isLoggingIn ? 'loader' : 'log-in'}" class="w-4 h-4 ${window.isLoggingIn ? 'animate-spin' : ''}"></i>
               <span>${window.isLoggingIn ? 'Memverifikasi Sesi...' : (isCashierTab ? 'Masuk ke Kasir POS' : 'Masuk ke Panel Admin')}</span>
             </button>
@@ -141,13 +138,21 @@ function renderLoginPage() {
 
           <div class="pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-[11px] text-slate-400">
             <span class="flex items-center"><i data-lucide="shield-check" class="w-3.5 h-3.5 mr-1 text-emerald-500"></i> Server-Side RBAC Auth</span>
-            <span>${isCashierTab ? 'PIN Default: 1234' : 'Pass Default: admin / admin123'}</span>
+            <span>Brute-Force Rate Limit Active</span>
           </div>
         </div>
       </div>
     </div>
   `;
 }
+
+let _appRenderDebounceTimer = null;
+window.debouncedRenderApp = function (delayMs = 150) {
+  if (_appRenderDebounceTimer) clearTimeout(_appRenderDebounceTimer);
+  _appRenderDebounceTimer = setTimeout(() => {
+    window.renderApp();
+  }, delayMs);
+};
 
 function navigate(tabName) {
   const store = window.store;
@@ -156,6 +161,14 @@ function navigate(tabName) {
   if (tabName.startsWith('admin') && store.currentRole !== 'admin') {
     openRoleSwitchModal();
     return;
+  }
+
+  // Redirect legacy / merged cashbook tab to Keuangan & Laba sub-tab
+  if (tabName === 'admin-cashbook') {
+    if (typeof setFinanceActiveTab === 'function') {
+      setFinanceActiveTab('daily_cashbook');
+    }
+    tabName = 'admin-finance';
   }
 
   window.currentTab = tabName;
@@ -216,6 +229,12 @@ function renderApp() {
     case 'admin-finance':
       mainContent = renderAdminFinance();
       break;
+    case 'admin-cashbook':
+      if (typeof setFinanceActiveTab === 'function') {
+        financeActiveTab = 'daily_cashbook';
+      }
+      mainContent = renderAdminFinance();
+      break;
     case 'admin-transactions':
       mainContent = renderAdminTransactions();
       break;
@@ -229,9 +248,11 @@ function renderApp() {
   appRoot.innerHTML = `
     <div class="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col font-sans transition-colors duration-200">
       ${renderNavbar()}
-      <main class="flex-1">
-        ${mainContent}
-      </main>
+      <div class="flex-1 flex flex-col min-w-0 md:pl-64 transition-all duration-200">
+        <main class="flex-1 pb-20 md:pb-8">
+          ${mainContent}
+        </main>
+      </div>
     </div>
   `;
 
@@ -244,13 +265,18 @@ function renderApp() {
         if (focusState.selectionStart !== null && newEl.type !== 'number') {
           newEl.setSelectionRange(focusState.selectionStart, focusState.selectionEnd);
         }
-      } catch (e) {}
+      } catch (e) { }
     }
   }
 
   // Render Lucide icons
   if (typeof lucide !== 'undefined') {
     lucide.createIcons();
+  }
+
+  // Update live clock immediately on render
+  if (typeof updateLiveClockDisplay === 'function') {
+    updateLiveClockDisplay();
   }
 
   // If admin dashboard is active, render chart

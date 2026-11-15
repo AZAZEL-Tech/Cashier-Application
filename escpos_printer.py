@@ -92,9 +92,9 @@ def build_escpos_receipt(trx, settings=None, paper_size="58mm"):
     def write_line(text=""):
         clean = (
             str(text)
-            .replace("•", "-")
-            .replace("—", "-")
-            .replace("–", "-")
+            .replace("\u2022", "-")
+            .replace("\u2014", "-")
+            .replace("\u2013", "-")
             .encode("ascii", errors="replace")
         )
         # Use CR+LF (\r\n) so all GEZHI/POS-58 firmwares latch and print the line buffer
@@ -327,11 +327,59 @@ def _is_virtual_printer(name):
     return any(k in low for k in VIRTUAL_PRINTER_KEYWORDS)
 
 
+class PRINTER_INFO_4W(ctypes.Structure):
+    _fields_ = [
+        ("pPrinterName", wintypes.LPWSTR),
+        ("pServerName", wintypes.LPWSTR),
+        ("Attributes", wintypes.DWORD),
+    ]
+
+
+def _enum_winspool_printer_names():
+    """
+    Fast, zero-subprocess Win32 EnumPrintersW call (< 1ms, no PowerShell cold-start lag).
+    """
+    if os.name != "nt":
+        return []
+    names = []
+    try:
+        PRINTER_ENUM_LOCAL = 0x00000002
+        PRINTER_ENUM_CONNECTIONS = 0x00000004
+        flags = PRINTER_ENUM_LOCAL | PRINTER_ENUM_CONNECTIONS
+
+        winspool = ctypes.WinDLL("winspool.drv", use_last_error=True)
+        winspool.EnumPrintersW.argtypes = [
+            wintypes.DWORD,
+            wintypes.LPWSTR,
+            wintypes.DWORD,
+            ctypes.POINTER(ctypes.c_byte),
+            wintypes.DWORD,
+            ctypes.POINTER(wintypes.DWORD),
+            ctypes.POINTER(wintypes.DWORD),
+        ]
+        winspool.EnumPrintersW.restype = wintypes.BOOL
+
+        needed = wintypes.DWORD(0)
+        returned = wintypes.DWORD(0)
+        winspool.EnumPrintersW(flags, None, 4, None, 0, ctypes.byref(needed), ctypes.byref(returned))
+        if needed.value > 0:
+            buf = (ctypes.c_byte * needed.value)()
+            if winspool.EnumPrintersW(flags, None, 4, buf, needed.value, ctypes.byref(needed), ctypes.byref(returned)):
+                info_array = ctypes.cast(buf, ctypes.POINTER(PRINTER_INFO_4W))
+                for i in range(returned.value):
+                    p_name = info_array[i].pPrinterName
+                    if p_name and not _is_virtual_printer(p_name):
+                        names.append(p_name.strip())
+    except Exception:
+        pass
+    return names
+
+
 def list_windows_printers():
     """
     Return list of available thermal printers:
     1. Active Direct USB Printing Support devices (VSC TM-58D PRO / USBPRINT)
-    2. Physical Windows Spooler printers (excluding PDF/XPS/OneNote/Fax virtual printers)
+    2. Physical Windows Spooler printers via fast native EnumPrintersW (excluding PDF/XPS/OneNote/Fax)
     """
     if os.name != "nt":
         return {"printers": [], "defaultPrinter": None, "recommendedPrinter": None}
@@ -350,17 +398,7 @@ def list_windows_printers():
     except Exception:
         pass
 
-    spooler_printers = []
-    try:
-        cmd = ["powershell", "-NoProfile", "-Command", "Get-Printer | Select-Object -ExpandProperty Name"]
-        res = subprocess.run(cmd, capture_output=True, text=True, timeout=4)
-        if res.returncode == 0 and res.stdout.strip():
-            for line in res.stdout.splitlines():
-                name = line.strip()
-                if name and not _is_virtual_printer(name):
-                    spooler_printers.append(name)
-    except Exception:
-        pass
+    spooler_printers = _enum_winspool_printer_names()
 
     thermal_keywords = ("vsc", "58", "pos", "tm-", "thermal", "receipt", "generic", "gezhi")
 

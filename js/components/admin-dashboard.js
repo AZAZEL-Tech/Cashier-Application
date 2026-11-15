@@ -14,6 +14,8 @@ function renderAdminDashboard() {
 
   // Transactions metrics
   const totalRevenue = validTransactions.reduce((acc, t) => acc + Number(t.total || 0), 0);
+  const totalTax = validTransactions.reduce((acc, t) => acc + Number(t.tax || 0), 0);
+  const totalNetSales = validTransactions.reduce((acc, t) => acc + (Number(t.subtotal || t.total || 0) - Number(t.discount || 0)), 0);
   const totalGrossProfit = validTransactions.reduce((acc, t) => {
     const netSale = Number(t.subtotal || t.total || 0) - Number(t.discount || 0);
     const cost = Number(t.totalCost || 0);
@@ -92,6 +94,7 @@ function renderAdminDashboard() {
               <i data-lucide="arrow-up-right" class="w-3.5 h-3.5"></i>
               <span>Hari ini: ${formatRupiah(todayRevenue)}</span>
             </p>
+            ${totalTax > 0 ? `<p class="text-[10px] text-slate-400 mt-0.5">Net Exc. PPN: ${formatRupiah(totalNetSales)} (PPN: ${formatRupiah(totalTax)})</p>` : ''}
           </div>
         </div>
 
@@ -187,11 +190,11 @@ function renderAdminDashboard() {
               ${lowStockProducts.length > 0 ? lowStockProducts.map(p => `
                 <div class="py-2.5 flex items-center justify-between">
                   <div class="min-w-0 pr-2">
-                    <h5 class="text-xs font-bold text-slate-800 dark:text-slate-200 truncate">${p.name}</h5>
-                    <p class="text-[11px] text-rose-500 font-semibold">Sisa: ${p.stock} ${p.unit} (Min: ${p.minStock})</p>
+                    <h5 class="text-xs font-bold text-slate-800 dark:text-slate-200 truncate">${escapeHtml(p.name)}</h5>
+                    <p class="text-[11px] text-rose-500 font-semibold">Sisa: ${p.stock} ${escapeHtml(p.unit)} (Min: ${p.minStock})</p>
                   </div>
                   <button 
-                    onclick="openRestockModal('${p.id}')"
+                    onclick="openRestockModal('${escapeHtml(p.id)}')"
                     class="px-2.5 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300 text-xs font-bold transition flex items-center space-x-1"
                   >
                     <i data-lucide="plus" class="w-3.5 h-3.5"></i>
@@ -221,7 +224,7 @@ function renderAdminDashboard() {
                     <span class="w-5 h-5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-bold text-[10px] flex items-center justify-center">
                       ${idx + 1}
                     </span>
-                    <span class="text-xs font-medium text-slate-800 dark:text-slate-200 truncate">${item.name}</span>
+                    <span class="text-xs font-medium text-slate-800 dark:text-slate-200 truncate">${escapeHtml(item.name)}</span>
                   </div>
                   <span class="text-xs font-bold text-indigo-600 dark:text-indigo-400 whitespace-nowrap">
                     ${item.qty} terjual
@@ -310,7 +313,7 @@ function initSalesChart() {
           },
           tooltip: {
             callbacks: {
-              label: function(context) {
+              label: function (context) {
                 return context.dataset.label + ': ' + formatRupiah(context.raw);
               }
             }
@@ -326,7 +329,7 @@ function initSalesChart() {
             ticks: {
               color: isDark ? '#64748b' : '#94a3b8',
               font: { size: 10 },
-              callback: function(value) {
+              callback: function (value) {
                 if (value >= 1000000) return 'Rp ' + (value / 1000000).toFixed(1) + 'jt';
                 if (value >= 1000) return 'Rp ' + (value / 1000) + 'k';
                 return 'Rp ' + value;

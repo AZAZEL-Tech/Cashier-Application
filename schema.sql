@@ -1,4 +1,4 @@
--- ============================================================
+ -- ============================================================
 -- WARUNGKU POS - MYSQL DATABASE SCHEMA
 -- Compatible with MySQL 5.7+, MySQL 8.0+, MariaDB 10.3+
 -- ============================================================
@@ -31,6 +31,7 @@ CREATE TABLE IF NOT EXISTS `products` (
   `minStock` INT DEFAULT 5,
   `unit` VARCHAR(32) DEFAULT 'pcs',
   `image` TEXT,
+  `is_deleted` TINYINT(1) DEFAULT 0,
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   INDEX `idx_category` (`category`),
   INDEX `idx_barcode` (`barcode`)
@@ -109,6 +110,50 @@ CREATE TABLE IF NOT EXISTS `discounts` (
   `isActive` TINYINT(1) DEFAULT 1,
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   INDEX `idx_discount_code` (`code`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 9. FINANCIAL REPORTS TABLE (HARIAN -> 7 HARI MINGGUAN -> 4 MINGGU BULANAN -> 12 BULAN TAHUNAN)
+CREATE TABLE IF NOT EXISTS `financial_reports` (
+  `id` VARCHAR(64) NOT NULL PRIMARY KEY,
+  `report_type` VARCHAR(32) NOT NULL, -- 'daily' | 'weekly' | 'monthly' | 'yearly'
+  `period_key` VARCHAR(64) NOT NULL,
+  `label` VARCHAR(255) NOT NULL,
+  `start_date` VARCHAR(64) NOT NULL,
+  `end_date` VARCHAR(64) NOT NULL,
+  `total_transactions` INT DEFAULT 0,
+  `total_items` INT DEFAULT 0,
+  `total_revenue` DECIMAL(15,2) DEFAULT 0,
+  `total_discount` DECIMAL(15,2) DEFAULT 0,
+  `total_tax` DECIMAL(15,2) DEFAULT 0,
+  `total_cost` DECIMAL(15,2) DEFAULT 0,
+  `gross_profit` DECIMAL(15,2) DEFAULT 0,
+  `total_expenses` DECIMAL(15,2) DEFAULT 0,
+  `net_profit` DECIMAL(15,2) DEFAULT 0,
+  `breakdown_json` LONGTEXT,
+  `is_consolidated` TINYINT(1) DEFAULT 0,
+  `closed_by` VARCHAR(128) DEFAULT 'Otomatis (Tutup Toko)',
+  `closed_at` VARCHAR(64) NOT NULL,
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  INDEX `idx_rpt_type_cons` (`report_type`, `is_consolidated`),
+  INDEX `idx_rpt_period` (`period_key`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 10. DAILY CASHBOOK TABLE (KAS HARIAN - MUTASI UANG MASUK & KELUAR)
+CREATE TABLE IF NOT EXISTS `daily_cashbook` (
+  `id` VARCHAR(64) NOT NULL PRIMARY KEY,
+  `date` VARCHAR(64) NOT NULL,
+  `type` VARCHAR(16) NOT NULL, -- 'in' | 'out'
+  `category` VARCHAR(128) NOT NULL,
+  `description` TEXT,
+  `amount` DECIMAL(15,2) DEFAULT 0,
+  `method` VARCHAR(32) DEFAULT 'cash', -- 'cash' | 'bank' | 'qris'
+  `user` VARCHAR(128) DEFAULT 'Admin',
+  `reference` VARCHAR(128) DEFAULT '',
+  `status` VARCHAR(32) DEFAULT 'active', -- 'active' | 'void'
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  INDEX `idx_cash_date` (`date`),
+  INDEX `idx_cash_type` (`type`),
+  INDEX `idx_cash_ref` (`reference`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================================

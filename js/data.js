@@ -16,7 +16,9 @@ const DEFAULT_SETTINGS = {
   bankAccountNumber: "8830-1928-4412",
   bankAccountHolder: "Warung Berkah Jaya",
   paperSize: "58mm", // "58mm" | "80mm"
-  soundEnabled: true
+  soundEnabled: true,
+  storeCloseTime: "22:00",
+  autoCloseEnabled: true
 };
 
 const DEFAULT_CATEGORIES = [

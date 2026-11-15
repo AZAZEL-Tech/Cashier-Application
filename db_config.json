@@ -1,5 +1,6 @@
 {
-  "driver": "mysql",
+  "driver": "sqlite",
+  "strict_driver": false,
   "mysql": {
     "host": "localhost",
     "port": 3306,

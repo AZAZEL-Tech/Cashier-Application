@@ -412,7 +412,7 @@ function buildReceiptInnerHtml(trx) {
   if (!trx) return '';
   const store = window.store;
   const s = store?.settings || {};
-  const trxDate = trx.date || trx.createdAt || new Date().toISOString();
+  const trxDate = trx.date || trx.createdAt || getLocalISOString();
   const trxCashier = trx.cashier || trx.cashierName || store?.cashierName || 'Kasir';
   const items = Array.isArray(trx.items) ? trx.items : [];
 
@@ -1394,10 +1394,10 @@ function openDiscountModalPos() {
                       <div class="flex items-center justify-between">
                         <div class="space-y-0.5 flex-1 pr-3">
                           <div class="flex items-center space-x-2">
-                            <span class="font-bold text-xs text-slate-800 dark:text-white">${d.name}</span>
+                            <span class="font-bold text-xs text-slate-800 dark:text-white">${escapeHtml(d.name)}</span>
                             ${d.code ? `
                               <span class="px-1.5 py-0.5 rounded bg-pink-100 dark:bg-pink-950 text-pink-700 dark:text-pink-300 font-mono text-[10px] font-bold">
-                                ${d.code}
+                                ${escapeHtml(d.code)}
                               </span>
                             ` : ''}
                           </div>
@@ -1459,16 +1459,21 @@ function openDiscountModalPos() {
             `}
           </div>
 
-          <!-- Manual Discount Input (Nominal Rp) -->
-          <div class="pt-3 border-t border-slate-100 dark:border-slate-800">
-            <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">Atau Masukkan Diskon Manual (Rp)</label>
+          <!-- Manual Discount Input (Nominal Rp - Requires Admin Authorization) -->
+          <div class="pt-3 border-t border-slate-100 dark:border-slate-800 space-y-2">
+            <div class="flex items-center justify-between">
+              <label class="block text-xs font-bold text-slate-700 dark:text-slate-300">Atau Masukkan Diskon Manual (Rp)</label>
+              <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-50 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400">
+                <i data-lucide="shield-check" class="w-3 h-3 inline mr-0.5"></i>Wajib Otorisasi Admin
+              </span>
+            </div>
             <div class="flex gap-2">
               <input 
                 type="number" 
                 id="manual-discount-input" 
                 min="0"
-                placeholder="Contoh: 5000"
-                value="${currentInfo && currentInfo.name === 'Diskon Manual' ? currentDiscount : ''}"
+                placeholder="Nominal diskon (Rp)..."
+                value="${currentInfo && String(currentInfo.name || '').startsWith('Diskon Manual') ? currentDiscount : ''}"
                 class="flex-1 px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-800 dark:text-white focus:ring-2 focus:ring-pink-500 focus:outline-none"
               />
               <button 
@@ -1480,8 +1485,19 @@ function openDiscountModalPos() {
               </button>
             </div>
 
+            ${store.currentRole !== 'admin' ? `
+              <div>
+                <input
+                  type="password"
+                  id="manual-discount-admin-pass"
+                  placeholder="Masukkan Password Admin untuk menyetujui diskon manual..."
+                  class="w-full px-3.5 py-2 bg-indigo-50/60 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-800 rounded-xl text-xs font-semibold text-slate-800 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                />
+              </div>
+            ` : ''}
+
             <!-- Quick Shortcut Chips -->
-            <div class="flex flex-wrap gap-1.5 mt-2">
+            <div class="flex flex-wrap gap-1.5 mt-1">
               ${[2000, 5000, 10000, 15000, 20000, 50000].map(amt => `
                 <button 
                   type="button" 
@@ -1546,16 +1562,57 @@ function handleApplyDiscountPreset(discountId) {
   window.store.showRealtimeToast(`🎉 Promo "${res.name}" aktif! Diskon: ${formatRupiah(res.discountAmount)}`);
 }
 
-function handleApplyManualDiscount() {
+async function handleApplyManualDiscount() {
   const input = document.getElementById('manual-discount-input');
   if (!input) return;
   const val = Math.max(0, Number(input.value) || 0);
-  window.store.setDiscount(val, val > 0 ? { name: 'Diskon Manual', type: 'fixed', value: val } : null);
+  const store = window.store;
+
+  if (val <= 0) {
+    store.setDiscount(0, null);
+    closeModal();
+    window.renderApp();
+    return;
+  }
+
+  let adminPass = '';
+  if (store.currentRole !== 'admin') {
+    const passInput = document.getElementById('manual-discount-admin-pass');
+    adminPass = passInput ? passInput.value.trim() : '';
+    if (!adminPass) {
+      adminPass = (prompt('Diskon manual memerlukan otorisasi Admin.\nMasukkan Password Admin:') || '').trim();
+    }
+    if (!adminPass) {
+      alert('Diskon manual dibatalkan karena Password Admin tidak diisi.');
+      return;
+    }
+
+    try {
+      const res = await store.apiFetch('/api/auth/verify-admin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: adminPass })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.success) {
+        alert(data.error || 'Password Admin salah! Diskon manual ditolak.');
+        return;
+      }
+    } catch (e) {
+      alert('Gagal memverifikasi otorisasi Admin ke server.');
+      return;
+    }
+  }
+
+  store.setDiscount(val, {
+    name: 'Diskon Manual',
+    type: 'fixed',
+    value: val,
+    adminAuthPassword: adminPass || undefined
+  });
   closeModal();
   window.renderApp();
-  if (val > 0) {
-    window.store.showRealtimeToast(`✂️ Diskon manual ${formatRupiah(val)} diterapkan.`);
-  }
+  store.showRealtimeToast(`✂️ Diskon manual ${formatRupiah(val)} berhasil diotorisasi & diterapkan.`);
 }
 
 function handleRemovePosDiscount() {

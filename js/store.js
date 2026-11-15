@@ -12,7 +12,7 @@ class AppStore {
     this.cashierName = localStorage.getItem('pos_cashier_name') || 'Kasir 1';
     this.isDark = localStorage.getItem('pos_theme') === 'dark';
     this.isLiveConnected = false;
-    
+
     // Initial local cache or fallback seed data
     this.settings = this.loadData('pos_settings', DEFAULT_SETTINGS);
     this.categories = this.loadData('pos_categories', DEFAULT_CATEGORIES);
@@ -21,19 +21,32 @@ class AppStore {
     this.expenses = this.loadData('pos_expenses', DEFAULT_EXPENSES);
     this.stockHistory = this.loadData('pos_stock_history', DEFAULT_STOCK_HISTORY);
     this.discounts = this.loadData('pos_discounts', typeof DEFAULT_DISCOUNTS !== 'undefined' ? DEFAULT_DISCOUNTS : []);
-    
+    this.financialReports = this.loadData('pos_financial_reports', []);
+    this.dailyCashbook = this.loadData('pos_daily_cashbook', []);
+
     // Active Cart for POS (kept locally per cashier session)
     this.cart = this.loadData('pos_active_cart', []);
     this.heldCarts = this.loadData('pos_held_carts', []);
     this.activeDiscount = Number(localStorage.getItem('pos_cart_discount') || 0);
     this.activeDiscountInfo = this.loadData('pos_cart_discount_info', null);
     this.customerName = localStorage.getItem('pos_customer_name') || 'Umum';
+    this.pendingCheckouts = this.loadData('pos_pending_checkouts', []);
+    this._isFlushingOfflineQueue = false;
 
     // Subscribed listeners
     this.listeners = [];
 
     // Apply dark mode on init
     this.applyTheme();
+
+    // Automatically flush offline transactions when network reconnects
+    if (typeof window !== 'undefined') {
+      window.addEventListener('online', () => {
+        if (this.isAuthenticated) {
+          this.flushOfflineQueue();
+        }
+      });
+    }
 
     // Start Realtime Connection to Server if authenticated
     if (this.isAuthenticated) {
@@ -132,7 +145,7 @@ class AppStore {
     this.isLiveConnected = false;
     localStorage.removeItem('pos_auth_token');
     if (this.eventSource) {
-      try { this.eventSource.close(); } catch (e) {}
+      try { this.eventSource.close(); } catch (e) { }
       this.eventSource = null;
     }
     if (this._pollInterval) {
@@ -154,9 +167,19 @@ class AppStore {
 
   saveData(key, data) {
     try {
-      localStorage.setItem(key, JSON.stringify(data));
+      let toStore = data;
+      // Cap large historical arrays in localStorage so browser 5MB quota is never exceeded
+      if (Array.isArray(data) && (key === 'pos_transactions' || key === 'pos_stock_history' || key === 'pos_expenses')) {
+        toStore = data.slice(0, 250);
+      }
+      localStorage.setItem(key, JSON.stringify(toStore));
     } catch (e) {
-      console.error(`Error saving key ${key}:`, e);
+      console.warn(`Quota/Storage warning for key ${key}:`, e);
+      try {
+        if (Array.isArray(data)) {
+          localStorage.setItem(key, JSON.stringify(data.slice(0, 50)));
+        }
+      } catch (_) { }
     }
   }
 
@@ -176,7 +199,7 @@ class AppStore {
     if (!this.authToken) return;
 
     if (this.eventSource) {
-      try { this.eventSource.close(); } catch (e) {}
+      try { this.eventSource.close(); } catch (e) { }
       this.eventSource = null;
     }
 
@@ -187,10 +210,12 @@ class AppStore {
     }
 
     try {
-      this.eventSource = new EventSource(`/api/events?token=${encodeURIComponent(this.authToken)}`);
+      // Authenticate via HttpOnly session cookie (warungku_session) so token never appears in URL logs
+      this.eventSource = new EventSource('/api/events', { withCredentials: true });
 
       this.eventSource.onopen = () => {
         this.isLiveConnected = true;
+        this.flushOfflineQueue();
         this.notify();
       };
 
@@ -211,6 +236,54 @@ class AppStore {
     } catch (err) {
       console.error("SSE connection error:", err);
       this.startPollingFallback();
+    }
+  }
+
+  async flushOfflineQueue() {
+    if (this._isFlushingOfflineQueue || !this.authToken) return;
+    if (!Array.isArray(this.pendingCheckouts) || this.pendingCheckouts.length === 0) return;
+
+    this._isFlushingOfflineQueue = true;
+    try {
+      const remaining = [];
+      let syncedCount = 0;
+
+      for (const pendingTrx of this.pendingCheckouts) {
+        try {
+          const payload = { ...pendingTrx };
+          delete payload.pendingSync;
+          const res = await this.apiFetch('/api/checkout', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+          if (res.ok) {
+            syncedCount++;
+            const resJson = await res.json().catch(() => ({}));
+            if (resJson.data) {
+              this.applyServerState(resJson.data, true);
+            }
+          } else if (res.status >= 400 && res.status < 500) {
+            // Validation rejected by server (e.g. duplicate or invalid): remove from queue so it doesn't block forever
+            console.warn('Offline transaction rejected by server validation:', pendingTrx.id);
+          } else {
+            remaining.push(pendingTrx);
+          }
+        } catch (netErr) {
+          // Still offline
+          remaining.push(pendingTrx);
+        }
+      }
+
+      this.pendingCheckouts = remaining;
+      this.saveData('pos_pending_checkouts', this.pendingCheckouts);
+
+      if (syncedCount > 0) {
+        this.showRealtimeToast(`☁️ ${syncedCount} transaksi offline berhasil disinkronkan ke server!`);
+        await this.fetchServerData();
+      }
+    } finally {
+      this._isFlushingOfflineQueue = false;
     }
   }
 
@@ -261,14 +334,26 @@ class AppStore {
     }
   }
 
-  applyServerState(serverData) {
+  applyServerState(serverData, skipFlush = false) {
     if (serverData.products) {
       this.products = serverData.products;
       this.saveData('pos_products', this.products);
     }
     if (serverData.transactions) {
-      this.transactions = serverData.transactions;
+      // Preserve any unsynced offline transactions so they are NEVER overwritten by SSE state updates
+      const serverIds = new Set(serverData.transactions.map(t => t.id));
+      this.pendingCheckouts = (this.pendingCheckouts || []).filter(pt => !serverIds.has(pt.id));
+      this.saveData('pos_pending_checkouts', this.pendingCheckouts);
+
+      this.transactions = [
+        ...this.pendingCheckouts,
+        ...serverData.transactions
+      ];
       this.saveData('pos_transactions', this.transactions);
+
+      if (!skipFlush && this.pendingCheckouts.length > 0) {
+        setTimeout(() => this.flushOfflineQueue(), 100);
+      }
     }
     if (serverData.expenses) {
       this.expenses = serverData.expenses;
@@ -289,6 +374,14 @@ class AppStore {
     if (serverData.categories) {
       this.categories = serverData.categories;
       this.saveData('pos_categories', this.categories);
+    }
+    if (serverData.financialReports) {
+      this.financialReports = serverData.financialReports;
+      this.saveData('pos_financial_reports', this.financialReports);
+    }
+    if (serverData.dailyCashbook) {
+      this.dailyCashbook = serverData.dailyCashbook;
+      this.saveData('pos_daily_cashbook', this.dailyCashbook);
     }
   }
 
@@ -344,12 +437,12 @@ class AppStore {
 
     const cartItem = this.cart.find(item => item.id === productId);
     const currentQtyInCart = cartItem ? cartItem.qty : 0;
-    
+
     if (currentQtyInCart + qtyToAdd > product.stock) {
       if (this.settings.soundEnabled && typeof soundFx !== 'undefined') soundFx.playError();
-      return { 
-        success: false, 
-        message: `Stok tidak mencukupi! Sisa stok terkini: ${product.stock}` 
+      return {
+        success: false,
+        message: `Stok tidak mencukupi! Sisa stok terkini: ${product.stock}`
       };
     }
 
@@ -439,7 +532,7 @@ class AppStore {
       discount = discountOrCode;
     } else {
       const query = String(discountOrCode || '').trim().toUpperCase();
-      discount = this.discounts.find(d => 
+      discount = this.discounts.find(d =>
         (d.code && d.code.toUpperCase() === query) || d.id === discountOrCode || d.name.toUpperCase() === query
       );
     }
@@ -453,9 +546,9 @@ class AppStore {
     }
 
     if (discount.minPurchase && subtotal < Number(discount.minPurchase)) {
-      return { 
-        success: false, 
-        message: `Minimal belanja untuk promo ini adalah ${formatRupiah(discount.minPurchase)} (Saat ini: ${formatRupiah(subtotal)})` 
+      return {
+        success: false,
+        message: `Minimal belanja untuk promo ini adalah ${formatRupiah(discount.minPurchase)} (Saat ini: ${formatRupiah(subtotal)})`
       };
     }
 
@@ -479,11 +572,11 @@ class AppStore {
       minPurchase: Number(discount.minPurchase || 0)
     });
 
-    return { 
-      success: true, 
-      discountAmount: calculatedDiscount, 
-      name: discount.name, 
-      code: discount.code 
+    return {
+      success: true,
+      discountAmount: calculatedDiscount,
+      name: discount.name,
+      code: discount.code
     };
   }
 
@@ -501,7 +594,7 @@ class AppStore {
     if (this.cart.length === 0) return false;
     const held = {
       id: 'HOLD-' + Date.now(),
-      date: new Date().toISOString(),
+      date: getLocalISOString(),
       customerName: this.customerName,
       note: note || `Pesanan ${this.customerName}`,
       cart: [...this.cart],
@@ -523,7 +616,7 @@ class AppStore {
     if (this.cart.length > 0) {
       this.heldCarts.push({
         id: 'HOLD-' + Date.now(),
-        date: new Date().toISOString(),
+        date: getLocalISOString(),
         customerName: this.customerName,
         note: `Pesanan ${this.customerName} (Disimpan Otomatis)`,
         cart: [...this.cart],
@@ -563,7 +656,7 @@ class AppStore {
   getCartCalculations() {
     const subtotal = this.cart.reduce((acc, item) => acc + item.subtotal, 0);
     const totalCost = this.cart.reduce((acc, item) => acc + (item.costPrice * item.qty), 0);
-    
+
     // Dynamic recalculation for percentage discount if cart contents changed
     let effectiveDiscount = this.activeDiscount;
     if (this.activeDiscountInfo && this.activeDiscountInfo.type === 'percentage') {
@@ -605,17 +698,19 @@ class AppStore {
     const finalAmountPaid = paymentMethod === 'cash' ? Math.max(amountPaid, calc.total) : calc.total;
     const change = Math.max(0, finalAmountPaid - calc.total);
 
-    const transactionId = 'TRX-' + new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14) + '-' + Math.floor(100 + Math.random() * 900);
+    const randHex = Array.from({ length: 6 }, () => Math.floor(Math.random() * 16).toString(16)).join('').toUpperCase();
+    const transactionId = 'TRX-' + Date.now() + '-' + randHex;
 
     const newTransaction = {
       id: transactionId,
-      date: new Date().toISOString(),
+      date: getLocalISOString(),
       cashier: this.cashierName,
       customerName: customerName || this.customerName,
       items: JSON.parse(JSON.stringify(this.cart)),
       subtotal: calc.subtotal,
       discount: calc.discount,
       discountInfo: this.activeDiscountInfo,
+      adminAuthPassword: this.activeDiscountInfo?.adminAuthPassword || undefined,
       tax: calc.tax,
       total: calc.total,
       totalCost: calc.totalCost,
@@ -651,8 +746,12 @@ class AppStore {
       }
       this.clearCart();
     } catch (e) {
-      console.warn("Offline checkout mode:", e);
-      // Offline fallback: optimistically deduct local stock
+      console.warn("Offline checkout queued for sync:", e);
+      // Queue offline transaction in persistent pos_pending_checkouts so it syncs when Wi-Fi returns
+      newTransaction.pendingSync = true;
+      this.pendingCheckouts = [newTransaction, ...(this.pendingCheckouts || [])];
+      this.saveData('pos_pending_checkouts', this.pendingCheckouts);
+
       this.cart.forEach(item => {
         const prod = this.products.find(p => p.id === item.id);
         if (prod) {
@@ -663,6 +762,7 @@ class AppStore {
       this.saveData('pos_products', this.products);
       this.saveData('pos_transactions', this.transactions);
       this.clearCart();
+      this.showRealtimeToast('📡 Offline: Transaksi disimpan ke antrean sinkronisasi & akan dikirim otomatis saat jaringan kembali.');
     }
 
     if (this.settings.soundEnabled && typeof soundFx !== 'undefined') {
@@ -812,7 +912,7 @@ class AppStore {
   async addExpense(expenseData) {
     const newExpense = {
       id: 'EXP-' + String(Date.now()).slice(-6),
-      date: expenseData.date || new Date().toISOString(),
+      date: expenseData.date || getLocalISOString(),
       category: expenseData.category || 'Operasional',
       description: expenseData.description || 'Pengeluaran Toko',
       amount: Math.round(Number(expenseData.amount) || 0),
@@ -857,6 +957,45 @@ class AppStore {
       }
     } catch (e) {
       console.warn("Server error:", e);
+    }
+  }
+
+  // ==================== DAILY CASHBOOK (KAS HARIAN) ====================
+  async addCashbookEntry(entryData) {
+    try {
+      const res = await this.apiFetch('/api/cashbook', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(entryData)
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.success) {
+        if (data.data) this.applyServerState(data.data);
+        this.notify();
+        return { success: true };
+      }
+      return { success: false, error: data.error || 'Gagal mencatat mutasi kas' };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  }
+
+  async voidCashbookEntry(id, reason = 'Dibatalkan oleh Admin') {
+    try {
+      const res = await this.apiFetch('/api/cashbook/void', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, reason })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.success) {
+        if (data.data) this.applyServerState(data.data);
+        this.notify();
+        return { success: true };
+      }
+      return { success: false, error: data.error || 'Gagal membatalkan transaksi kas' };
+    } catch (e) {
+      return { success: false, error: e.message };
     }
   }
 
@@ -973,14 +1112,16 @@ class AppStore {
   exportBackupJSON() {
     const backup = {
       version: "2.0-realtime",
-      exportDate: new Date().toISOString(),
+      exportDate: getLocalISOString(),
       settings: this.settings,
       categories: this.categories,
       products: this.products,
       transactions: this.transactions,
       expenses: this.expenses,
       stockHistory: this.stockHistory,
-      discounts: this.discounts
+      discounts: this.discounts,
+      dailyCashbook: this.dailyCashbook,
+      financialReports: this.financialReports
     };
     const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -1028,9 +1169,75 @@ class AppStore {
       window.location.reload();
     }
   }
+
+  async closeStoreDay(targetDate = null, forceNew = false) {
+    try {
+      const res = await this.apiFetch('/api/reports/close-day', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          date: targetDate,
+          closedBy: `${this.cashierName || 'Admin'} (Tutup Toko)`,
+          forceNew
+        })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        return { success: false, message: data.error || 'Gagal memproses tutup buku toko.' };
+      }
+      if (data.data) {
+        this.applyServerState(data.data);
+      }
+      this.notify();
+      return {
+        success: true,
+        closedDate: data.closedDate,
+        consolidatedEvents: data.consolidatedEvents || []
+      };
+    } catch (e) {
+      return { success: false, message: e.message };
+    }
+  }
+
+  async deleteFinancialReport(reportId) {
+    try {
+      const res = await this.apiFetch(`/api/reports?id=${encodeURIComponent(reportId)}`, {
+        method: 'DELETE'
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        return { success: false, message: data.error || 'Gagal menghapus laporan.' };
+      }
+      if (data.data) {
+        this.applyServerState(data.data);
+      }
+      this.notify();
+      return { success: true };
+    } catch (e) {
+      return { success: false, message: e.message };
+    }
+  }
 }
 
 // Helpers for formatting & local timezone dates
+function getLocalISOString(date = new Date()) {
+  const d = date instanceof Date ? date : new Date(date);
+  const pad = (num) => String(num).padStart(2, '0');
+  const year = d.getFullYear();
+  const month = pad(d.getMonth() + 1);
+  const day = pad(d.getDate());
+  const hours = pad(d.getHours());
+  const minutes = pad(d.getMinutes());
+  const seconds = pad(d.getSeconds());
+
+  // Real life local timezone offset (+07:00 or -xx:xx)
+  const offset = -d.getTimezoneOffset();
+  const sign = offset >= 0 ? '+' : '-';
+  const offsetHours = pad(Math.floor(Math.abs(offset) / 60));
+  const offsetMinutes = pad(Math.abs(offset) % 60);
+  return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}${sign}${offsetHours}:${offsetMinutes}`;
+}
+
 function getLocalDateKey(dateInput) {
   if (!dateInput) return '';
   const d = dateInput instanceof Date ? dateInput : new Date(dateInput);
